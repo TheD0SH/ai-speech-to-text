@@ -1,0 +1,6 @@
+keyboard
+pyperclip
+pyaudio
+httpx
+pystray
+pillow
