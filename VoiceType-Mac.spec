@@ -42,3 +42,16 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+
+# Create a macOS app bundle
+app = BUNDLE(
+    exe,
+    name='VoiceType.app',
+    icon=None,
+    bundle_identifier='com.voicetype.app',
+    info_plist={
+        'NSMicrophoneUsageDescription': 'Voice Type needs access to your microphone for speech-to-text functionality.',
+        'LSBackgroundOnly': False,
+        'LSUIElement': True,  # Hide from dock, show in menu bar
+    },
+)

@@ -14,6 +14,20 @@ Hold **SHIFT** to speak, release to type. Fast, accurate voice-to-text using Gro
 
 ## Installation
 
+### Option 1: Pre-built Executables
+
+**Windows:**
+- Download `VoiceType.exe` from the `dist` folder
+- Double-click to run (no installation needed)
+
+**macOS:**
+- Download `VoiceType.pkg`
+- Double-click it
+- Click "Continue" then "Install"
+- Done! VoiceType is in your Applications folder
+
+### Option 2: Run from Source
+
 1. **Clone the repo**
    ```bash
    git clone https://github.com/yourusername/ai-speech-to-text.git
@@ -40,6 +54,26 @@ Hold **SHIFT** to speak, release to type. Fast, accurate voice-to-text using Gro
    ```
    
    Or on Windows, just double-click `run.bat`
+
+## Building from Source
+
+### Windows
+```bash
+pip install pyinstaller
+pyinstaller VoiceType.spec --noconfirm
+```
+The executable will be created at `dist/VoiceType.exe`
+
+### macOS
+```bash
+chmod +x build-mac.sh
+./build-mac.sh
+```
+This creates:
+- `dist/VoiceType.app` - The application bundle
+- `dist/VoiceType.pkg` - PKG installer (share this file)
+
+**Note:** You must build on the target platform. Windows builds only work on Windows, Mac builds only work on Mac.
 
 ## Setup
 
