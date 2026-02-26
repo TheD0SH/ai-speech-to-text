@@ -290,12 +290,21 @@ class FloatingWidget:
             settings_open = False
             win.destroy()
 
+        def close_and_quit():
+            """Close settings and quit the entire app."""
+            global running
+            running = False
+            keyboard.unhook_all()
+            win.destroy()
+            self.root.quit()
+            os._exit(0)
+
         save_btn = tk.Button(btn_frame, text="Save", command=save, 
                             bg="#4a9eff", fg="white", font=("Arial", 11, "bold"), 
                             width=12, height=1, relief="raised", borderwidth=2, cursor="hand2")
         save_btn.pack(side=tk.LEFT, padx=8)
 
-        tk.Button(btn_frame, text="Close", command=close, 
+        tk.Button(btn_frame, text="Close", command=close_and_quit, 
                  bg="#555577", fg="white", font=("Arial", 11), 
                  width=12, height=1, relief="raised", borderwidth=2, cursor="hand2").pack(side=tk.LEFT, padx=8)
 
@@ -304,7 +313,8 @@ class FloatingWidget:
                  bg="#8855cc", fg="white", font=("Arial", 11), 
                  width=12, height=1, relief="raised", borderwidth=2, cursor="hand2").pack(side=tk.LEFT, padx=8)
 
-        win.protocol("WM_DELETE_WINDOW", close)
+        # When user clicks X on settings window, quit entire app
+        win.protocol("WM_DELETE_WINDOW", close_and_quit)
 
     def quit_app(self):
         global running
