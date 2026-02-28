@@ -175,6 +175,45 @@ print(f"[startup] ACCOUNTING_MODE from config: {ACCOUNTING_MODE}")
 print(f"[startup] Full config: {config_data}")
 
 
+# Auto-start helper functions
+def set_autostart(enabled):
+    """Enable or disable auto-start on Windows boot."""
+    if sys.platform != "win32":
+        return False
+    
+    try:
+        import winreg
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        app_name = "VoiceType"
+        
+        if enabled:
+            # Get the path to the executable or script
+            if getattr(sys, 'frozen', False):
+                # Running as compiled exe
+                exe_path = sys.executable
+            else:
+                # Running as script
+                exe_path = f'"{sys.executable}" "{Path(__file__).resolve()}"'
+            
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
+            winreg.CloseKey(key)
+            print(f"[autostart] Enabled: {exe_path}")
+            return True
+        else:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+            try:
+                winreg.DeleteValue(key, app_name)
+                print("[autostart] Disabled")
+            except FileNotFoundError:
+                pass
+            winreg.CloseKey(key)
+            return True
+    except Exception as e:
+        print(f"[autostart] Error: {e}")
+        return False
+
+
 # State
 class State:
     recording = False
@@ -269,13 +308,23 @@ class FloatingWidget:
         self.text_font = tkfont.Font(family="Segoe UI", size=11)
         self.text_label = tk.Label(
             self.content_frame,
-            text="Hold Shift to speak...",
+            text=f"Hold {HOTKEY.upper()} to speak...",
             font=self.text_font,
             fg=self.text_secondary,
             bg=self.bg_medium,
             wraplength=280,
         )
-        self.text_label.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 12))
+        self.text_label.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 5))
+        
+        # Keyboard shortcut hint
+        self.hint_label = tk.Label(
+            self.content_frame,
+            text=f"Press {HOTKEY.upper()} to record | Right-click tray for settings",
+            font=("Segoe UI", 8),
+            fg=self.text_secondary,
+            bg=self.bg_medium,
+        )
+        self.hint_label.pack(fill=tk.X, padx=15, pady=(0, 10))
 
         # Status colors
         self.colors = {
@@ -620,6 +669,23 @@ class FloatingWidget:
         tk.Label(content, text=f"💡 {len(MACROS)} macros loaded. Edit ~/.voice-type-macros.json to customize.", 
                 bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
 
+        # Auto-start option (Windows only)
+        autostart_var = tk.BooleanVar(value=config_data.get("autostart", False))
+        if sys.platform == "win32":
+            autostart_check = tk.Checkbutton(
+                content,
+                text="🚀 Start with Windows (auto-launch on boot)",
+                variable=autostart_var,
+                bg=self.bg_dark,
+                fg=self.text_primary,
+                selectcolor=self.bg_light,
+                activebackground=self.bg_dark,
+                activeforeground=self.text_primary,
+                font=("Segoe UI", 10),
+                cursor="hand2"
+            )
+            autostart_check.pack(anchor="w", pady=(0, 15))
+
         # Buttons
         btn_frame = tk.Frame(content, bg=self.bg_dark)
         btn_frame.pack(pady=20)
@@ -646,6 +712,12 @@ class FloatingWidget:
                 FILTER_WORDS = [w.strip() for w in filter_text_val.split(",") if w.strip()]
             else:
                 FILTER_WORDS = []
+            
+            # Handle autostart (Windows only)
+            if sys.platform == "win32" and 'autostart_var' in dir():
+                autostart_enabled = autostart_var.get()
+                config_data["autostart"] = autostart_enabled
+                set_autostart(autostart_enabled)
 
             config_data["api_key"] = API_KEY
             config_data["mic_index"] = MIC_INDEX
@@ -1117,6 +1189,103 @@ def apply_casual_mode(text):
     return result
 
 
+# Voice commands - speak these to control text
+VOICE_COMMANDS = {
+    # Editing commands
+    "delete last word": "__DELETE_WORD__",
+    "delete last sentence": "__DELETE_SENTENCE__",
+    "delete all": "__DELETE_ALL__",
+    "undo that": "__DELETE_WORD__",
+    "scratch that": "__DELETE_WORD__",
+    
+    # Formatting commands
+    "new paragraph": "\n\n",
+    "new line": "\n",
+    "tab": "\t",
+    "indent": "\t",
+    
+    # Punctuation (explicit)
+    "period": ".",
+    "full stop": ".",
+    "comma": ",",
+    "question mark": "?",
+    "exclamation mark": "!",
+    "exclamation point": "!",
+    "colon": ":",
+    "semicolon": ";",
+    "dash": " - ",
+    "hyphen": "-",
+    "quote": '"',
+    "open quote": '"',
+    "close quote": '"',
+    "apostrophe": "'",
+    
+    # Special characters
+    "at sign": "@",
+    "at symbol": "@",
+    "hash": "#",
+    "hashtag": "#",
+    "percent": "%",
+    "percent sign": "%",
+    "ampersand": "&",
+    "asterisk": "*",
+    "plus sign": "+",
+    "minus sign": "-",
+    "equals": "=",
+    "slash": "/",
+    "backslash": "\\",
+    
+    # Common replacements
+    "dot com": ".com",
+    "dot net": ".net",
+    "dot org": ".org",
+    "dot io": ".io",
+}
+
+
+def process_voice_commands(text):
+    """Process voice commands and return modified text or special actions."""
+    global VOICE_COMMANDS
+    
+    text_lower = text.lower().strip()
+    
+    # Check for exact command matches
+    if text_lower in VOICE_COMMANDS:
+        command_value = VOICE_COMMANDS[text_lower]
+        
+        # Handle special delete commands
+        if command_value == "__DELETE_WORD__":
+            print("[command] Delete last word")
+            keyboard.press_and_release("ctrl+backspace")
+            return None
+        elif command_value == "__DELETE_SENTENCE__":
+            print("[command] Delete last sentence")
+            keyboard.press_and_release("ctrl+shift+left")
+            keyboard.press_and_release("backspace")
+            return None
+        elif command_value == "__DELETE_ALL__":
+            print("[command] Delete all")
+            keyboard.press_and_release("ctrl+a")
+            keyboard.press_and_release("backspace")
+            return None
+        
+        # Return the replacement text
+        print(f"[command] '{text}' → '{command_value}'")
+        return command_value
+    
+    # Check for inline commands (commands within longer text)
+    result = text
+    for command, replacement in VOICE_COMMANDS.items():
+        if replacement.startswith("__"):
+            continue  # Skip special commands for inline use
+        pattern = re.compile(re.escape(command), re.IGNORECASE)
+        if pattern.search(result):
+            result = pattern.sub(replacement, result)
+            print(f"[command] Inline: '{command}' → '{replacement}'")
+    
+    return result
+
+
 def type_text(text):
     """Type text using clipboard."""
     global ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE
@@ -1157,6 +1326,14 @@ def type_text(text):
     
     # Apply voice macros (expand text shortcuts)
     text = apply_macros(text)
+    
+    # Process voice commands (delete, new paragraph, etc.)
+    command_result = process_voice_commands(text)
+    if command_result is None:
+        # It was an action command (delete), already executed
+        print("[command] Action command executed")
+        return
+    text = command_result
     
     # Convert emoji phrases to actual emojis
     text = convert_emojis(text)
