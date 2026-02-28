@@ -33,10 +33,34 @@ print("Ready!")
 
 # Config
 CONFIG_FILE = Path.home() / ".voice-type-config.json"
+MACROS_FILE = Path.home() / ".voice-type-macros.json"
+STATS_FILE = Path.home() / ".voice-type-stats.json"
 SAMPLE_RATE = 16000
 
 # Default filter words - common filler words the model outputs when nothing is said
 DEFAULT_FILTER_WORDS = ["thank you", "thanks", "thank you.", "thanks."]
+
+# Default macros
+DEFAULT_MACROS = {
+    "signature": "Best regards,",
+    "cheers": "Cheers,",
+    "thanks ahead": "Thanks in advance!",
+    "let me check": "Let me check on that and get back to you.",
+    "sounds good": "Sounds good, let me know if you need anything else!",
+    "will do": "Will do!",
+    "today date": "{{DATE}}",
+    "now time": "{{TIME}}",
+}
+
+# Statistics tracking
+DEFAULT_STATS = {
+    "total_words": 0,
+    "total_sessions": 0,
+    "total_transcriptions": 0,
+    "total_minutes": 0.0,
+    "first_used": None,
+    "last_used": None,
+}
 
 # Load config
 config_data = {
@@ -63,12 +87,71 @@ HOTKEY = config_data.get("hotkey", "shift")
 ACCOUNTING_MODE = config_data.get("accounting_mode", False)
 ACCOUNTING_COMMA = config_data.get("accounting_comma", False)
 CASUAL_MODE = config_data.get("casual_mode", False)
+THEME = config_data.get("theme", "dark")  # "dark" or "light"
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
+
+# Load macros
+MACROS = DEFAULT_MACROS.copy()
+if MACROS_FILE.exists():
+    try:
+        user_macros = json.loads(MACROS_FILE.read_text())
+        MACROS.update(user_macros)
+        print(f"[startup] Loaded {len(user_macros)} custom macros")
+    except:
+        pass
+
+# Load statistics
+STATS = DEFAULT_STATS.copy()
+if STATS_FILE.exists():
+    try:
+        saved_stats = json.loads(STATS_FILE.read_text())
+        STATS.update(saved_stats)
+    except:
+        pass
 
 # Debug: Show config on startup
 print(f"[startup] Config file: {CONFIG_FILE}")
 print(f"[startup] ACCOUNTING_MODE from config: {ACCOUNTING_MODE}")
 print(f"[startup] Full config: {config_data}")
+
+
+# Auto-start helper functions
+def set_autostart(enabled):
+    """Enable or disable auto-start on Windows boot."""
+    if sys.platform != "win32":
+        return False
+    
+    try:
+        import winreg
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        app_name = "VoiceType"
+        
+        if enabled:
+            # Get the path to the executable or script
+            if getattr(sys, 'frozen', False):
+                # Running as compiled exe
+                exe_path = sys.executable
+            else:
+                # Running as script
+                exe_path = f'"{sys.executable}" "{Path(__file__).resolve()}"'
+            
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
+            winreg.CloseKey(key)
+            print(f"[autostart] Enabled: {exe_path}")
+            return True
+        else:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+            try:
+                winreg.DeleteValue(key, app_name)
+                print("[autostart] Disabled")
+            except FileNotFoundError:
+                pass
+            winreg.CloseKey(key)
+            return True
+    except Exception as e:
+        print(f"[autostart] Error: {e}")
+        return False
 
 
 # State
@@ -93,17 +176,35 @@ class FloatingWidget:
         # Show in taskbar - this makes it behave like a normal app
         self.root.attributes("-toolwindow", False)
 
-        # Modern color scheme - dark mode
-        self.bg_dark = "#1a1a2e"
-        self.bg_medium = "#16213e"
-        self.bg_light = "#0f3460"
-        self.accent_primary = "#4a9eff"
-        self.accent_secondary = "#533483"
-        self.accent_success = "#00ff88"
-        self.accent_warning = "#ffc107"
-        self.text_primary = "#ffffff"
-        self.text_secondary = "#a0a0a0"
-        self.border_color = "#4a9eff"
+        # Theme support - dark or light
+        self.apply_theme(THEME)
+    
+    def apply_theme(self, theme_name):
+        """Apply color theme (dark or light)."""
+        if theme_name == "light":
+            # Light theme colors
+            self.bg_dark = "#f5f5f5"
+            self.bg_medium = "#ffffff"
+            self.bg_light = "#e8e8e8"
+            self.accent_primary = "#0066cc"
+            self.accent_secondary = "#6b5b95"
+            self.accent_success = "#28a745"
+            self.accent_warning = "#ffc107"
+            self.text_primary = "#1a1a1a"
+            self.text_secondary = "#666666"
+            self.border_color = "#0066cc"
+        else:
+            # Dark theme colors (default)
+            self.bg_dark = "#1a1a2e"
+            self.bg_medium = "#16213e"
+            self.bg_light = "#0f3460"
+            self.accent_primary = "#4a9eff"
+            self.accent_secondary = "#533483"
+            self.accent_success = "#00ff88"
+            self.accent_warning = "#ffc107"
+            self.text_primary = "#ffffff"
+            self.text_secondary = "#a0a0a0"
+            self.border_color = "#4a9eff"
 
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
@@ -165,13 +266,23 @@ class FloatingWidget:
         self.text_font = tkfont.Font(family="Segoe UI", size=11)
         self.text_label = tk.Label(
             self.content_frame,
-            text="Hold Shift to speak...",
+            text=f"Hold {HOTKEY.upper()} to speak...",
             font=self.text_font,
             fg=self.text_secondary,
             bg=self.bg_medium,
             wraplength=280,
         )
-        self.text_label.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 12))
+        self.text_label.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 5))
+        
+        # Keyboard shortcut hint
+        self.hint_label = tk.Label(
+            self.content_frame,
+            text=f"Press {HOTKEY.upper()} to record | Right-click tray for settings",
+            font=("Segoe UI", 8),
+            fg=self.text_secondary,
+            bg=self.bg_medium,
+        )
+        self.hint_label.pack(fill=tk.X, padx=15, pady=(0, 10))
 
         # Status colors
         self.colors = {
@@ -429,12 +540,98 @@ class FloatingWidget:
         tk.Label(content, text="Example: thank you, thanks", 
                 bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
 
+        # Statistics Section
+        tk.Label(content, text="📊 Statistics", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        
+        stats_frame = tk.Frame(content, bg=self.bg_light, padx=10, pady=10)
+        stats_frame.pack(fill=tk.X, pady=(5, 15))
+        
+        stats_labels = [
+            f"📝 Words typed: {STATS.get('total_words', 0):,}",
+            f"🎤 Transcriptions: {STATS.get('total_transcriptions', 0):,}",
+            f"📅 First used: {STATS.get('first_used', 'Never') or 'Never'}",
+            f"🕒 Last used: {STATS.get('last_used', 'Never') or 'Never'}",
+        ]
+        
+        for stat_text in stats_labels:
+            tk.Label(stats_frame, text=stat_text, bg=self.bg_light, fg=self.text_primary,
+                    font=("Segoe UI", 10)).pack(anchor="w")
+        
+        def reset_stats():
+            global STATS
+            STATS = DEFAULT_STATS.copy()
+            STATS_FILE.write_text(json.dumps(STATS, indent=2))
+            stats_updated_label.config(text="✓ Stats reset!")
+            win.after(1500, lambda: stats_updated_label.config(text=""))
+        
+        stats_btn_frame = tk.Frame(stats_frame, bg=self.bg_light)
+        stats_btn_frame.pack(anchor="w", pady=(10, 0))
+        
+        stats_updated_label = tk.Label(stats_btn_frame, text="", bg=self.bg_light, 
+                                       fg=self.accent_success, font=("Segoe UI", 9))
+        stats_updated_label.pack(side=tk.LEFT)
+        
+        tk.Button(stats_btn_frame, text="Reset Stats", bg=self.bg_medium, fg=self.text_primary,
+                 command=reset_stats, font=("Segoe UI", 9), relief="flat", cursor="hand2").pack(side=tk.LEFT, padx=(0, 5))
+
+        # Macros Section (collapsible)
+        tk.Label(content, text="🔧 Voice Macros", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="Voice commands that expand to full text:", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w")
+        
+        # Show a few example macros
+        macros_text = tk.Text(content, height=4, width=50, bg=self.bg_light, fg=self.text_primary,
+                             font=("Segoe UI", 9), relief="flat", wrap=tk.WORD)
+        macros_text.pack(fill=tk.X, pady=(5, 5))
+        
+        example_macros = list(MACROS.items())[:5]
+        macros_display = "\n".join([f'"{k}" → "{v[:30]}..."' if len(v) > 30 else f'"{k}" → "{v}"' 
+                                   for k, v in example_macros])
+        macros_text.insert("1.0", macros_display)
+        macros_text.config(state="disabled")
+        
+        tk.Label(content, text=f"💡 {len(MACROS)} macros loaded. Edit ~/.voice-type-macros.json to customize.", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
+
+        # Auto-start option (Windows only)
+        autostart_var = tk.BooleanVar(value=config_data.get("autostart", False))
+        if sys.platform == "win32":
+            autostart_check = tk.Checkbutton(
+                content,
+                text="🚀 Start with Windows (auto-launch on boot)",
+                variable=autostart_var,
+                bg=self.bg_dark,
+                fg=self.text_primary,
+                selectcolor=self.bg_light,
+                activebackground=self.bg_dark,
+                activeforeground=self.text_primary,
+                font=("Segoe UI", 10),
+                cursor="hand2"
+            )
+            autostart_check.pack(anchor="w", pady=(0, 15))
+
+        # Theme selection
+        tk.Label(content, text="🎨 Theme", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        
+        theme_frame = tk.Frame(content, bg=self.bg_dark)
+        theme_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        theme_var = tk.StringVar(value=THEME)
+        theme_combo = ttk.Combobox(theme_frame, textvariable=theme_var, 
+                                   values=["dark", "light"], state="readonly", width=20)
+        theme_combo.pack(side=tk.LEFT)
+        tk.Label(theme_frame, text="  Restart app to apply theme change", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(side=tk.LEFT)
+
         # Buttons
         btn_frame = tk.Frame(content, bg=self.bg_dark)
         btn_frame.pack(pady=20)
 
         def save():
-            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS
+            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME
             API_KEY = api_entry.get().strip()
             idx = mic_combo.current()
             if idx >= 0 and mics:
@@ -447,12 +644,19 @@ class FloatingWidget:
             ACCOUNTING_MODE = accounting_var.get()
             ACCOUNTING_COMMA = comma_var.get()
             CASUAL_MODE = casual_var.get()
+            THEME = theme_var.get()
             
             filter_text_val = filter_entry.get().strip()
             if filter_text_val:
                 FILTER_WORDS = [w.strip() for w in filter_text_val.split(",") if w.strip()]
             else:
                 FILTER_WORDS = []
+            
+            # Handle autostart (Windows only)
+            if sys.platform == "win32" and 'autostart_var' in dir():
+                autostart_enabled = autostart_var.get()
+                config_data["autostart"] = autostart_enabled
+                set_autostart(autostart_enabled)
 
             config_data["api_key"] = API_KEY
             config_data["mic_index"] = MIC_INDEX
@@ -460,6 +664,7 @@ class FloatingWidget:
             config_data["accounting_mode"] = ACCOUNTING_MODE
             config_data["accounting_comma"] = ACCOUNTING_COMMA
             config_data["casual_mode"] = CASUAL_MODE
+            config_data["theme"] = THEME
             config_data["filter_words"] = FILTER_WORDS
             CONFIG_FILE.write_text(json.dumps(config_data))
 
@@ -922,6 +1127,103 @@ def apply_casual_mode(text):
     return result
 
 
+# Voice commands - speak these to control text
+VOICE_COMMANDS = {
+    # Editing commands
+    "delete last word": "__DELETE_WORD__",
+    "delete last sentence": "__DELETE_SENTENCE__",
+    "delete all": "__DELETE_ALL__",
+    "undo that": "__DELETE_WORD__",
+    "scratch that": "__DELETE_WORD__",
+    
+    # Formatting commands
+    "new paragraph": "\n\n",
+    "new line": "\n",
+    "tab": "\t",
+    "indent": "\t",
+    
+    # Punctuation (explicit)
+    "period": ".",
+    "full stop": ".",
+    "comma": ",",
+    "question mark": "?",
+    "exclamation mark": "!",
+    "exclamation point": "!",
+    "colon": ":",
+    "semicolon": ";",
+    "dash": " - ",
+    "hyphen": "-",
+    "quote": '"',
+    "open quote": '"',
+    "close quote": '"',
+    "apostrophe": "'",
+    
+    # Special characters
+    "at sign": "@",
+    "at symbol": "@",
+    "hash": "#",
+    "hashtag": "#",
+    "percent": "%",
+    "percent sign": "%",
+    "ampersand": "&",
+    "asterisk": "*",
+    "plus sign": "+",
+    "minus sign": "-",
+    "equals": "=",
+    "slash": "/",
+    "backslash": "\\",
+    
+    # Common replacements
+    "dot com": ".com",
+    "dot net": ".net",
+    "dot org": ".org",
+    "dot io": ".io",
+}
+
+
+def process_voice_commands(text):
+    """Process voice commands and return modified text or special actions."""
+    global VOICE_COMMANDS
+    
+    text_lower = text.lower().strip()
+    
+    # Check for exact command matches
+    if text_lower in VOICE_COMMANDS:
+        command_value = VOICE_COMMANDS[text_lower]
+        
+        # Handle special delete commands
+        if command_value == "__DELETE_WORD__":
+            print("[command] Delete last word")
+            keyboard.press_and_release("ctrl+backspace")
+            return None
+        elif command_value == "__DELETE_SENTENCE__":
+            print("[command] Delete last sentence")
+            keyboard.press_and_release("ctrl+shift+left")
+            keyboard.press_and_release("backspace")
+            return None
+        elif command_value == "__DELETE_ALL__":
+            print("[command] Delete all")
+            keyboard.press_and_release("ctrl+a")
+            keyboard.press_and_release("backspace")
+            return None
+        
+        # Return the replacement text
+        print(f"[command] '{text}' → '{command_value}'")
+        return command_value
+    
+    # Check for inline commands (commands within longer text)
+    result = text
+    for command, replacement in VOICE_COMMANDS.items():
+        if replacement.startswith("__"):
+            continue  # Skip special commands for inline use
+        pattern = re.compile(re.escape(command), re.IGNORECASE)
+        if pattern.search(result):
+            result = pattern.sub(replacement, result)
+            print(f"[command] Inline: '{command}' → '{replacement}'")
+    
+    return result
+
+
 def type_text(text):
     """Type text using clipboard."""
     global ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE
@@ -960,16 +1262,81 @@ def type_text(text):
         print("[filtered] Text was filtered out, nothing to type")
         return
     
+    # Apply voice macros (expand text shortcuts)
+    text = apply_macros(text)
+    
+    # Process voice commands (delete, new paragraph, etc.)
+    command_result = process_voice_commands(text)
+    if command_result is None:
+        # It was an action command (delete), already executed
+        print("[command] Action command executed")
+        return
+    text = command_result
+    
     # Convert emoji phrases to actual emojis
     text = convert_emojis(text)
     
     # Apply casual mode (lowercase, informal punctuation)
     text = apply_casual_mode(text)
     
+    # Update statistics
+    update_stats(text)
+    
     print(f"[typing] {text}")
     pyperclip.copy(text)
     time.sleep(0.05)
     keyboard.press_and_release("ctrl+v")
+
+
+def apply_macros(text):
+    """Apply voice macros to expand shortcuts."""
+    global MACROS
+    
+    if not MACROS:
+        return text
+    
+    result = text
+    today = time.strftime("%Y-%m-%d")
+    now = time.strftime("%H:%M:%S")
+    datetime = time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Sort by length (longest first) to avoid partial matches
+    sorted_macros = sorted(MACROS.items(), key=lambda x: len(x[0]), reverse=True)
+    
+    for phrase, expansion in sorted_macros:
+        # Case-insensitive replacement
+        pattern = re.compile(re.escape(phrase), re.IGNORECASE)
+        
+        # Replace dynamic placeholders
+        expansion = expansion.replace("{{DATE}}", today)
+        expansion = expansion.replace("{{TIME}}", now)
+        expansion = expansion.replace("{{DATETIME}}", datetime)
+        
+        result = pattern.sub(expansion, result)
+    
+    # Clean up any double spaces
+    result = re.sub(r'\s+', ' ', result).strip()
+    
+    return result
+
+
+def update_stats(text):
+    """Update usage statistics."""
+    global STATS
+    
+    word_count = len(text.split())
+    STATS["total_words"] += word_count
+    STATS["total_transcriptions"] += 1
+    STATS["last_used"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    if STATS["first_used"] is None:
+        STATS["first_used"] = STATS["last_used"]
+    
+    # Save stats to file
+    try:
+        STATS_FILE.write_text(json.dumps(STATS, indent=2))
+    except:
+        pass
 
 
 def record_and_transcribe():
@@ -1090,17 +1457,27 @@ def hotkey_loop():
 
 
 def main():
-    global widget, tray_icon
+    global widget, tray_icon, STATS
 
     print("=" * 50)
     print(f"Voice Type - Groq Whisper (Hold {HOTKEY.upper()})")
     print("=" * 50)
+
+    # Increment session count
+    STATS["total_sessions"] += 1
+    try:
+        STATS_FILE.write_text(json.dumps(STATS, indent=2))
+    except:
+        pass
 
     if not API_KEY:
         print("\n  No API key found!")
         print("Get free key: https://console.groq.com/keys")
     else:
         print(f"API key loaded ({len(API_KEY)} chars)")
+    
+    if MACROS:
+        print(f"Macros loaded: {len(MACROS)}")
 
     widget = FloatingWidget()
 
