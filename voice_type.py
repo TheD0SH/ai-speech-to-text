@@ -198,6 +198,7 @@ class State:
 state = State()
 settings_open = False
 tray_icon = None
+last_transcription = ""  # Store last transcription for copy feature
 
 
 class FloatingWidget:
@@ -836,7 +837,14 @@ def create_tray_icon():
 
     def on_settings(icon, item):
         widget.root.after(0, widget.open_settings)
-
+    
+    def on_copy_last(icon, item):
+        """Copy last transcription to clipboard."""
+        global last_transcription
+        if last_transcription:
+            pyperclip.copy(last_transcription)
+            print(f"[clipboard] Copied: {last_transcription[:50]}...")
+    
     def on_show(icon, item):
         widget.root.after(0, widget.show_widget)
     
@@ -849,6 +857,7 @@ def create_tray_icon():
     menu = pystray.Menu(
         pystray.MenuItem("Settings", on_settings),
         pystray.MenuItem("History", on_history),
+        pystray.MenuItem("Copy Last", on_copy_last, default=False),
         pystray.MenuItem("Show Widget", on_show),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Quit", on_quit),
@@ -1531,6 +1540,9 @@ def record_and_transcribe():
         if text:
             text = text.strip()
             print(f"[whisper] {text}")
+            
+            # Store last transcription for copy feature
+            last_transcription = text
             
             # Show word/character count
             word_count = len(text.split())
