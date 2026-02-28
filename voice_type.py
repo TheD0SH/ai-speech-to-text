@@ -104,7 +104,9 @@ API_KEY = config_data.get("api_key", "")
 MIC_INDEX = config_data.get("mic_index")
 HOTKEY = config_data.get("hotkey", "shift")
 ACCOUNTING_MODE = config_data.get("accounting_mode", False)
+DOUBLE_SPACE_PERIOD = config_data.get("double_space_period", False)
 CAPITALIZE_SENTENCES = config_data.get("capitalize_sentences", True)  # Auto-capitalize first letter
+SMART_QUOTES = config_data.get("smart_quotes", False)
 ACCOUNTING_COMMA = config_data.get("accounting_comma", False)
 CASUAL_MODE = config_data.get("casual_mode", False)
 THEME = config_data.get("theme", "dark")  # "dark" or "light"
@@ -207,6 +209,7 @@ class State:
 state = State()
 settings_open = False
 tray_icon = None
+last_transcription = ""  # Store last transcription for copy feature
 last_transcription = ""  # Store last transcription for copy feature
 
 
@@ -391,21 +394,20 @@ class FloatingWidget:
         self.hidden = False
         self.root.deiconify()
     
-<<<<<<< HEAD
     def update_level(self, level):
         """Update audio level indicator (0.0 to 1.0)."""
         if not hasattr(self, 'level_canvas'):
             return
-        
+
         # Smooth the level changes
         self.current_level = self.current_level * 0.7 + level * 0.3
-        
+
         # Update bar width
         canvas_width = 280
         bar_width = int(canvas_width * min(self.current_level, 1.0))
-        
+
         self.level_canvas.coords(self.level_bar, 0, 0, bar_width, 8)
-        
+
         # Change color based on level
         if self.current_level < 0.3:
             color = self.accent_success  # Green - quiet
@@ -413,20 +415,19 @@ class FloatingWidget:
             color = self.accent_warning  # Yellow - good
         else:
             color = "#ff4444"  # Red - too loud
-        
+
         self.level_canvas.itemconfig(self.level_bar, fill=color)
-=======
+
     def start_drag(self, event):
         """Record starting position for drag."""
         self.drag_start_x = event.x
         self.drag_start_y = event.y
-    
+
     def do_drag(self, event):
         """Handle widget dragging."""
         x = self.root.winfo_x() + (event.x - self.drag_start_x)
         y = self.root.winfo_y() + (event.y - self.drag_start_y)
         self.root.geometry(f"+{x}+{y}")
->>>>>>> feature/drag-widget
 
     def open_settings(self):
         global settings_open
@@ -1666,6 +1667,22 @@ def record_and_transcribe():
                 # Capitalize after sentence endings
                 import re
                 text = re.sub(r'([.!?]\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text)
+
+            # Apply smart quotes if enabled
+            if SMART_QUOTES:
+                # Replace straight quotes with curly quotes
+                result = []
+                in_quote = False
+                for char in text:
+                    if char == '"':
+                        if in_quote:
+                            result.append('"')  # Closing quote
+                        else:
+                            result.append('"')  # Opening quote
+                        in_quote = not in_quote
+                    else:
+                        result.append(char)
+                text = ''.join(result)
             
             print(f"[whisper] {text}")
             
