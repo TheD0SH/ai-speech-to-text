@@ -62,12 +62,27 @@ DEFAULT_STATS = {
     "last_used": None,
 }
 
+# History storage
+HISTORY_FILE = Path.home() / ".voice-type-history.json"
+HISTORY = []
+
 # Load config
 config_data = {
     "api_key": "",
     "mic_index": None,
     "hotkey": "shift",
     "accounting_mode": False,
+    "history_enabled": True,
+    # Granular punctuation controls
+    "punctuation": {
+        "periods": True,
+        "commas": True,
+        "question_marks": True,
+        "exclamation_marks": True,
+        "colons": True,
+        "semicolons": True,
+        "quotes": True,
+    },
     "filter_words": DEFAULT_FILTER_WORDS
 }
 if CONFIG_FILE.exists():
@@ -88,7 +103,19 @@ ACCOUNTING_MODE = config_data.get("accounting_mode", False)
 ACCOUNTING_COMMA = config_data.get("accounting_comma", False)
 CASUAL_MODE = config_data.get("casual_mode", False)
 THEME = config_data.get("theme", "dark")  # "dark" or "light"
+HISTORY_ENABLED = config_data.get("history_enabled", True)
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
+
+# Granular punctuation settings
+PUNCTUATION = config_data.get("punctuation", {
+    "periods": True,
+    "commas": True,
+    "question_marks": True,
+    "exclamation_marks": True,
+    "colons": True,
+    "semicolons": True,
+    "quotes": True,
+})
 
 # Load macros
 MACROS = DEFAULT_MACROS.copy()
@@ -106,6 +133,14 @@ if STATS_FILE.exists():
     try:
         saved_stats = json.loads(STATS_FILE.read_text())
         STATS.update(saved_stats)
+    except:
+        pass
+
+# Load history
+if HISTORY_FILE.exists() and HISTORY_ENABLED:
+    try:
+        HISTORY = json.loads(HISTORY_FILE.read_text())
+        print(f"[startup] Loaded {len(HISTORY)} history items")
     except:
         pass
 
@@ -759,12 +794,16 @@ def create_tray_icon():
 
     def on_show(icon, item):
         widget.root.after(0, widget.show_widget)
+    
+    def on_history(icon, item):
+        widget.root.after(0, widget.open_history)
 
     def on_quit(icon, item):
         widget.root.after(0, widget.quit_app)
 
     menu = pystray.Menu(
         pystray.MenuItem("Settings", on_settings),
+        pystray.MenuItem("History", on_history),
         pystray.MenuItem("Show Widget", on_show),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Quit", on_quit),
@@ -1320,6 +1359,26 @@ def apply_macros(text):
     return result
 
 
+def save_to_history(text):
+    """Save transcription to history."""
+    global HISTORY
+    if not HISTORY_ENABLED or not text:
+        return
+    
+    entry = {
+        "text": text,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "words": len(text.split())
+    }
+    HISTORY.insert(0, entry)
+    HISTORY = HISTORY[:100]  # Keep last 100
+    
+    try:
+        HISTORY_FILE.write_text(json.dumps(HISTORY, indent=2))
+    except:
+        pass
+
+
 def update_stats(text):
     """Update usage statistics."""
     global STATS
@@ -1337,6 +1396,9 @@ def update_stats(text):
         STATS_FILE.write_text(json.dumps(STATS, indent=2))
     except:
         pass
+    
+    # Save to history
+    save_to_history(text)
 
 
 def record_and_transcribe():
