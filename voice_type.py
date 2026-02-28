@@ -87,6 +87,7 @@ HOTKEY = config_data.get("hotkey", "shift")
 ACCOUNTING_MODE = config_data.get("accounting_mode", False)
 ACCOUNTING_COMMA = config_data.get("accounting_comma", False)
 CASUAL_MODE = config_data.get("casual_mode", False)
+THEME = config_data.get("theme", "dark")  # "dark" or "light"
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
 
 # Load macros
@@ -175,17 +176,35 @@ class FloatingWidget:
         # Show in taskbar - this makes it behave like a normal app
         self.root.attributes("-toolwindow", False)
 
-        # Modern color scheme - dark mode
-        self.bg_dark = "#1a1a2e"
-        self.bg_medium = "#16213e"
-        self.bg_light = "#0f3460"
-        self.accent_primary = "#4a9eff"
-        self.accent_secondary = "#533483"
-        self.accent_success = "#00ff88"
-        self.accent_warning = "#ffc107"
-        self.text_primary = "#ffffff"
-        self.text_secondary = "#a0a0a0"
-        self.border_color = "#4a9eff"
+        # Theme support - dark or light
+        self.apply_theme(THEME)
+    
+    def apply_theme(self, theme_name):
+        """Apply color theme (dark or light)."""
+        if theme_name == "light":
+            # Light theme colors
+            self.bg_dark = "#f5f5f5"
+            self.bg_medium = "#ffffff"
+            self.bg_light = "#e8e8e8"
+            self.accent_primary = "#0066cc"
+            self.accent_secondary = "#6b5b95"
+            self.accent_success = "#28a745"
+            self.accent_warning = "#ffc107"
+            self.text_primary = "#1a1a1a"
+            self.text_secondary = "#666666"
+            self.border_color = "#0066cc"
+        else:
+            # Dark theme colors (default)
+            self.bg_dark = "#1a1a2e"
+            self.bg_medium = "#16213e"
+            self.bg_light = "#0f3460"
+            self.accent_primary = "#4a9eff"
+            self.accent_secondary = "#533483"
+            self.accent_success = "#00ff88"
+            self.accent_warning = "#ffc107"
+            self.text_primary = "#ffffff"
+            self.text_secondary = "#a0a0a0"
+            self.border_color = "#4a9eff"
 
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
@@ -593,12 +612,26 @@ class FloatingWidget:
             )
             autostart_check.pack(anchor="w", pady=(0, 15))
 
+        # Theme selection
+        tk.Label(content, text="🎨 Theme", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        
+        theme_frame = tk.Frame(content, bg=self.bg_dark)
+        theme_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        theme_var = tk.StringVar(value=THEME)
+        theme_combo = ttk.Combobox(theme_frame, textvariable=theme_var, 
+                                   values=["dark", "light"], state="readonly", width=20)
+        theme_combo.pack(side=tk.LEFT)
+        tk.Label(theme_frame, text="  Restart app to apply theme change", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(side=tk.LEFT)
+
         # Buttons
         btn_frame = tk.Frame(content, bg=self.bg_dark)
         btn_frame.pack(pady=20)
 
         def save():
-            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS
+            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME
             API_KEY = api_entry.get().strip()
             idx = mic_combo.current()
             if idx >= 0 and mics:
@@ -611,6 +644,7 @@ class FloatingWidget:
             ACCOUNTING_MODE = accounting_var.get()
             ACCOUNTING_COMMA = comma_var.get()
             CASUAL_MODE = casual_var.get()
+            THEME = theme_var.get()
             
             filter_text_val = filter_entry.get().strip()
             if filter_text_val:
@@ -630,6 +664,7 @@ class FloatingWidget:
             config_data["accounting_mode"] = ACCOUNTING_MODE
             config_data["accounting_comma"] = ACCOUNTING_COMMA
             config_data["casual_mode"] = CASUAL_MODE
+            config_data["theme"] = THEME
             config_data["filter_words"] = FILTER_WORDS
             CONFIG_FILE.write_text(json.dumps(config_data))
 
