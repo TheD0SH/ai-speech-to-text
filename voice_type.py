@@ -19,6 +19,16 @@ if sys.stderr:
 
 print("Loading Voice Type...")
 
+# Load environment variables from .env file if it exists
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        print("[env] Loaded .env file")
+except ImportError:
+    print("[env] python-dotenv not installed, skipping .env")
+
 import keyboard
 import pyperclip
 import tkinter as tk
@@ -38,7 +48,20 @@ SAMPLE_RATE = 16000
 # Default filter words - common filler words the model outputs when nothing is said
 DEFAULT_FILTER_WORDS = ["thank you", "thanks", "thank you.", "thanks."]
 
-# Load config
+
+def validate_api_key(key):
+    """Validate Groq API key format."""
+    if not key:
+        return False, "API key is empty"
+    key = key.strip()
+    if len(key) < 20:
+        return False, "API key is too short"
+    if not key.startswith("gsk_"):
+        return False, "API key should start with 'gsk_'"
+    return True, "Valid"
+
+
+# Load config from multiple sources (priority: JSON config > .env > old config)
 config_data = {
     "api_key": "",
     "mic_index": None,
@@ -46,16 +69,27 @@ config_data = {
     "accounting_mode": False,
     "filter_words": DEFAULT_FILTER_WORDS
 }
+
+# Try JSON config first
 if CONFIG_FILE.exists():
     try:
         config_data = json.loads(CONFIG_FILE.read_text())
+        print(f"[config] Loaded from {CONFIG_FILE}")
     except:
         pass
+
+# Try .env file as fallback for API key
+if not config_data.get("api_key"):
+    env_key = os.environ.get("GROQ_API_KEY", "")
+    if env_key:
+        config_data["api_key"] = env_key
+        print("[config] Loaded API key from environment")
 
 # Also try old config file for backward compatibility
 old_config = Path.home() / "voice-type-config.txt"
 if not config_data.get("api_key") and old_config.exists():
     config_data["api_key"] = old_config.read_text().strip()
+    print("[config] Loaded from legacy config")
 
 API_KEY = config_data.get("api_key", "")
 MIC_INDEX = config_data.get("mic_index")
@@ -65,10 +99,18 @@ ACCOUNTING_COMMA = config_data.get("accounting_comma", False)
 CASUAL_MODE = config_data.get("casual_mode", False)
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
 
+# Validate API key on startup
+if API_KEY:
+    is_valid, msg = validate_api_key(API_KEY)
+    if not is_valid:
+        print(f"[warning] API key validation: {msg}")
+else:
+    print("[info] No API key configured")
+
 # Debug: Show config on startup
 print(f"[startup] Config file: {CONFIG_FILE}")
 print(f"[startup] ACCOUNTING_MODE from config: {ACCOUNTING_MODE}")
-print(f"[startup] Full config: {config_data}")
+print(f"[startup] Hotkey: {HOTKEY.upper()}")
 
 
 # State
@@ -568,13 +610,20 @@ def create_tray_icon():
     return pystray.Icon("voice_type", image, f"Voice Type (Hold {HOTKEY.upper()})", menu)
 
 
-def transcribe_with_groq(audio_path):
-    """Use Groq Whisper API for transcription."""
+def transcribe_with_groq(audio_path, retry_count=0):
+    """Use Groq Whisper API for transcription with retry logic."""
     global API_KEY
 
     if not API_KEY:
-        return None, "No API key"
+        return None, "No API key configured. Open Settings to add your Groq API key."
 
+    # Validate API key format
+    is_valid, msg = validate_api_key(API_KEY)
+    if not is_valid:
+        return None, f"Invalid API key: {msg}"
+
+    max_retries = 3
+    
     try:
         url = "https://api.groq.com/openai/v1/audio/transcriptions"
         headers = {"Authorization": f"Bearer {API_KEY}"}
@@ -583,17 +632,46 @@ def transcribe_with_groq(audio_path):
             files = {"file": ("audio.wav", f, "audio/wav")}
             data = {"model": "whisper-large-v3-turbo", "response_format": "json"}
 
-            with httpx.Client(timeout=30) as client:
+            timeout = 30 + (retry_count * 10)  # Increase timeout on retries
+            with httpx.Client(timeout=timeout) as client:
                 response = client.post(url, headers=headers, files=files, data=data)
 
         if response.status_code == 200:
             result = response.json()
             return result.get("text"), None
+        elif response.status_code == 401:
+            return None, "Invalid API key. Check your key at console.groq.com"
+        elif response.status_code == 429:
+            # Rate limited - retry after delay
+            if retry_count < max_retries:
+                wait_time = 2 ** retry_count  # Exponential backoff
+                print(f"[API] Rate limited, retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                return transcribe_with_groq(audio_path, retry_count + 1)
+            return None, "Rate limited. Try again in a moment."
+        elif response.status_code >= 500:
+            # Server error - retry
+            if retry_count < max_retries:
+                wait_time = 2 ** retry_count
+                print(f"[API] Server error, retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                return transcribe_with_groq(audio_path, retry_count + 1)
+            return None, f"Groq server error (HTTP {response.status_code})"
         else:
-            return None, f"HTTP {response.status_code}"
+            return None, f"API error (HTTP {response.status_code})"
 
+    except httpx.TimeoutException:
+        if retry_count < max_retries:
+            print(f"[API] Timeout, retrying...")
+            return transcribe_with_groq(audio_path, retry_count + 1)
+        return None, "Connection timeout. Check your internet."
+    except httpx.ConnectError:
+        return None, "Cannot connect to Groq. Check your internet connection."
     except Exception as e:
-        return None, str(e)
+        error_msg = str(e)
+        if "Connection" in error_msg or "network" in error_msg.lower():
+            return None, "Network error. Check your internet connection."
+        return None, f"Error: {error_msg[:50]}"
 
 
 # Emoji mapping for voice commands
