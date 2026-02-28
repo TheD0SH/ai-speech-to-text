@@ -359,6 +359,17 @@ class FloatingWidget:
     def show_widget(self):
         self.hidden = False
         self.root.deiconify()
+    
+    def start_drag(self, event):
+        """Record starting position for drag."""
+        self.drag_start_x = event.x
+        self.drag_start_y = event.y
+    
+    def do_drag(self, event):
+        """Handle widget dragging."""
+        x = self.root.winfo_x() + (event.x - self.drag_start_x)
+        y = self.root.winfo_y() + (event.y - self.drag_start_y)
+        self.root.geometry(f"+{x}+{y}")
 
     def open_settings(self):
         global settings_open
