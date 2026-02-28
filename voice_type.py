@@ -74,6 +74,7 @@ config_data = {
     "accounting_mode": False,
     "history_enabled": True,
     "quicken_mode": False,  # Type character-by-character for Quicken compatibility
+    "language": "auto",  # Auto-detect language or specify (en, es, fr, de, etc.)
     # Granular punctuation controls
     "punctuation": {
         "periods": True,
@@ -106,6 +107,7 @@ CASUAL_MODE = config_data.get("casual_mode", False)
 THEME = config_data.get("theme", "dark")  # "dark" or "light"
 HISTORY_ENABLED = config_data.get("history_enabled", True)
 QUICKEN_MODE = config_data.get("quicken_mode", False)  # Character-by-character typing for Quicken
+LANGUAGE = config_data.get("language", "auto")  # Auto-detect or specify language
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
 
 # Granular punctuation settings
@@ -730,12 +732,27 @@ class FloatingWidget:
         tk.Label(content, text="   Enable if text doesn't paste correctly in Quicken or similar apps", 
                 bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
 
+        # Language selection
+        tk.Label(content, text="🌍 Language", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        
+        lang_frame = tk.Frame(content, bg=self.bg_dark)
+        lang_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        language_var = tk.StringVar(value=LANGUAGE)
+        lang_options = ["auto", "en", "es", "fr", "de", "it", "pt", "ru", "ja", "ko", "zh", "ar", "hi", "nl", "pl", "tr"]
+        lang_combo = ttk.Combobox(lang_frame, textvariable=language_var, 
+                                   values=lang_options, state="readonly", width=20)
+        lang_combo.pack(side=tk.LEFT)
+        tk.Label(lang_frame, text="  Auto = detect automatically", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(side=tk.LEFT)
+
         # Buttons
         btn_frame = tk.Frame(content, bg=self.bg_dark)
         btn_frame.pack(pady=20)
 
         def save():
-            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME, QUICKEN_MODE
+            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME, QUICKEN_MODE, LANGUAGE
             API_KEY = api_entry.get().strip()
             idx = mic_combo.current()
             if idx >= 0 and mics:
@@ -750,6 +767,7 @@ class FloatingWidget:
             CASUAL_MODE = casual_var.get()
             THEME = theme_var.get()
             QUICKEN_MODE = quicken_var.get()
+            LANGUAGE = language_var.get()
             
             filter_text_val = filter_entry.get().strip()
             if filter_text_val:
@@ -771,6 +789,7 @@ class FloatingWidget:
             config_data["casual_mode"] = CASUAL_MODE
             config_data["theme"] = THEME
             config_data["quicken_mode"] = QUICKEN_MODE
+            config_data["language"] = LANGUAGE
             config_data["filter_words"] = FILTER_WORDS
             CONFIG_FILE.write_text(json.dumps(config_data))
 
@@ -905,6 +924,10 @@ def transcribe_with_groq(audio_path):
         with open(audio_path, "rb") as f:
             files = {"file": ("audio.wav", f, "audio/wav")}
             data = {"model": "whisper-large-v3-turbo", "response_format": "json"}
+            
+            # Add language parameter if specified (not auto-detect)
+            if LANGUAGE and LANGUAGE != "auto":
+                data["language"] = LANGUAGE
 
             with httpx.Client(timeout=30) as client:
                 response = client.post(url, headers=headers, files=files, data=data)
