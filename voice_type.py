@@ -1092,6 +1092,103 @@ def apply_casual_mode(text):
     return result
 
 
+# Voice commands - speak these to control text
+VOICE_COMMANDS = {
+    # Editing commands
+    "delete last word": "__DELETE_WORD__",
+    "delete last sentence": "__DELETE_SENTENCE__",
+    "delete all": "__DELETE_ALL__",
+    "undo that": "__DELETE_WORD__",
+    "scratch that": "__DELETE_WORD__",
+    
+    # Formatting commands
+    "new paragraph": "\n\n",
+    "new line": "\n",
+    "tab": "\t",
+    "indent": "\t",
+    
+    # Punctuation (explicit)
+    "period": ".",
+    "full stop": ".",
+    "comma": ",",
+    "question mark": "?",
+    "exclamation mark": "!",
+    "exclamation point": "!",
+    "colon": ":",
+    "semicolon": ";",
+    "dash": " - ",
+    "hyphen": "-",
+    "quote": '"',
+    "open quote": '"',
+    "close quote": '"',
+    "apostrophe": "'",
+    
+    # Special characters
+    "at sign": "@",
+    "at symbol": "@",
+    "hash": "#",
+    "hashtag": "#",
+    "percent": "%",
+    "percent sign": "%",
+    "ampersand": "&",
+    "asterisk": "*",
+    "plus sign": "+",
+    "minus sign": "-",
+    "equals": "=",
+    "slash": "/",
+    "backslash": "\\",
+    
+    # Common replacements
+    "dot com": ".com",
+    "dot net": ".net",
+    "dot org": ".org",
+    "dot io": ".io",
+}
+
+
+def process_voice_commands(text):
+    """Process voice commands and return modified text or special actions."""
+    global VOICE_COMMANDS
+    
+    text_lower = text.lower().strip()
+    
+    # Check for exact command matches
+    if text_lower in VOICE_COMMANDS:
+        command_value = VOICE_COMMANDS[text_lower]
+        
+        # Handle special delete commands
+        if command_value == "__DELETE_WORD__":
+            print("[command] Delete last word")
+            keyboard.press_and_release("ctrl+backspace")
+            return None
+        elif command_value == "__DELETE_SENTENCE__":
+            print("[command] Delete last sentence")
+            keyboard.press_and_release("ctrl+shift+left")
+            keyboard.press_and_release("backspace")
+            return None
+        elif command_value == "__DELETE_ALL__":
+            print("[command] Delete all")
+            keyboard.press_and_release("ctrl+a")
+            keyboard.press_and_release("backspace")
+            return None
+        
+        # Return the replacement text
+        print(f"[command] '{text}' → '{command_value}'")
+        return command_value
+    
+    # Check for inline commands (commands within longer text)
+    result = text
+    for command, replacement in VOICE_COMMANDS.items():
+        if replacement.startswith("__"):
+            continue  # Skip special commands for inline use
+        pattern = re.compile(re.escape(command), re.IGNORECASE)
+        if pattern.search(result):
+            result = pattern.sub(replacement, result)
+            print(f"[command] Inline: '{command}' → '{replacement}'")
+    
+    return result
+
+
 def type_text(text):
     """Type text using clipboard."""
     global ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE
@@ -1132,6 +1229,14 @@ def type_text(text):
     
     # Apply voice macros (expand text shortcuts)
     text = apply_macros(text)
+    
+    # Process voice commands (delete, new paragraph, etc.)
+    command_result = process_voice_commands(text)
+    if command_result is None:
+        # It was an action command (delete), already executed
+        print("[command] Action command executed")
+        return
+    text = command_result
     
     # Convert emoji phrases to actual emojis
     text = convert_emojis(text)
