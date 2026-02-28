@@ -114,6 +114,45 @@ print(f"[startup] ACCOUNTING_MODE from config: {ACCOUNTING_MODE}")
 print(f"[startup] Full config: {config_data}")
 
 
+# Auto-start helper functions
+def set_autostart(enabled):
+    """Enable or disable auto-start on Windows boot."""
+    if sys.platform != "win32":
+        return False
+    
+    try:
+        import winreg
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        app_name = "VoiceType"
+        
+        if enabled:
+            # Get the path to the executable or script
+            if getattr(sys, 'frozen', False):
+                # Running as compiled exe
+                exe_path = sys.executable
+            else:
+                # Running as script
+                exe_path = f'"{sys.executable}" "{Path(__file__).resolve()}"'
+            
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
+            winreg.CloseKey(key)
+            print(f"[autostart] Enabled: {exe_path}")
+            return True
+        else:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+            try:
+                winreg.DeleteValue(key, app_name)
+                print("[autostart] Disabled")
+            except FileNotFoundError:
+                pass
+            winreg.CloseKey(key)
+            return True
+    except Exception as e:
+        print(f"[autostart] Error: {e}")
+        return False
+
+
 # State
 class State:
     recording = False
@@ -208,13 +247,23 @@ class FloatingWidget:
         self.text_font = tkfont.Font(family="Segoe UI", size=11)
         self.text_label = tk.Label(
             self.content_frame,
-            text="Hold Shift to speak...",
+            text=f"Hold {HOTKEY.upper()} to speak...",
             font=self.text_font,
             fg=self.text_secondary,
             bg=self.bg_medium,
             wraplength=280,
         )
-        self.text_label.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 12))
+        self.text_label.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 5))
+        
+        # Keyboard shortcut hint
+        self.hint_label = tk.Label(
+            self.content_frame,
+            text=f"Press {HOTKEY.upper()} to record | Right-click tray for settings",
+            font=("Segoe UI", 8),
+            fg=self.text_secondary,
+            bg=self.bg_medium,
+        )
+        self.hint_label.pack(fill=tk.X, padx=15, pady=(0, 10))
 
         # Status colors
         self.colors = {
@@ -527,6 +576,23 @@ class FloatingWidget:
         tk.Label(content, text=f"💡 {len(MACROS)} macros loaded. Edit ~/.voice-type-macros.json to customize.", 
                 bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
 
+        # Auto-start option (Windows only)
+        autostart_var = tk.BooleanVar(value=config_data.get("autostart", False))
+        if sys.platform == "win32":
+            autostart_check = tk.Checkbutton(
+                content,
+                text="🚀 Start with Windows (auto-launch on boot)",
+                variable=autostart_var,
+                bg=self.bg_dark,
+                fg=self.text_primary,
+                selectcolor=self.bg_light,
+                activebackground=self.bg_dark,
+                activeforeground=self.text_primary,
+                font=("Segoe UI", 10),
+                cursor="hand2"
+            )
+            autostart_check.pack(anchor="w", pady=(0, 15))
+
         # Buttons
         btn_frame = tk.Frame(content, bg=self.bg_dark)
         btn_frame.pack(pady=20)
@@ -551,6 +617,12 @@ class FloatingWidget:
                 FILTER_WORDS = [w.strip() for w in filter_text_val.split(",") if w.strip()]
             else:
                 FILTER_WORDS = []
+            
+            # Handle autostart (Windows only)
+            if sys.platform == "win32" and 'autostart_var' in dir():
+                autostart_enabled = autostart_var.get()
+                config_data["autostart"] = autostart_enabled
+                set_autostart(autostart_enabled)
 
             config_data["api_key"] = API_KEY
             config_data["mic_index"] = MIC_INDEX
