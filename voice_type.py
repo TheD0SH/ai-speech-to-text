@@ -983,12 +983,16 @@ def create_tray_icon():
     def on_history(icon, item):
         widget.root.after(0, widget.open_history)
 
+    def on_export(icon, item):
+        export_history()
+
     def on_quit(icon, item):
         widget.root.after(0, widget.quit_app)
 
     menu = pystray.Menu(
         pystray.MenuItem("Settings", on_settings),
         pystray.MenuItem("History", on_history),
+        pystray.MenuItem("Export History", on_export),
         pystray.MenuItem("Copy Last", on_copy_last, default=False),
         pystray.MenuItem("Show Widget", on_show),
         pystray.Menu.SEPARATOR,
@@ -1579,6 +1583,37 @@ def save_to_history(text):
         HISTORY_FILE.write_text(json.dumps(HISTORY, indent=2))
     except:
         pass
+
+
+def export_history():
+    """Export history to a text file on desktop."""
+    global HISTORY
+    if not HISTORY:
+        print("[export] No history to export")
+        return
+    
+    from datetime import datetime
+    desktop = Path.home() / "Desktop"
+    if not desktop.exists():
+        desktop = Path.home()
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    export_file = desktop / f"voice_type_history_{timestamp}.txt"
+    
+    try:
+        with open(export_file, "w", encoding="utf-8") as f:
+            f.write("VoiceType Transcription History\n")
+            f.write(f"Exported: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Total entries: {len(HISTORY)}\n")
+            f.write("=" * 50 + "\n\n")
+            
+            for i, entry in enumerate(HISTORY, 1):
+                f.write(f"[{entry.get('timestamp', 'Unknown')}] ({entry.get('words', 0)} words)\n")
+                f.write(f"{entry.get('text', '')}\n\n")
+        
+        print(f"[export] Exported {len(HISTORY)} entries to {export_file}")
+    except Exception as e:
+        print(f"[export] Error: {e}")
 
 
 def update_stats(text):
