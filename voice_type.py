@@ -921,6 +921,83 @@ class FloatingWidget:
 
         win.protocol("WM_DELETE_WINDOW", on_close)
 
+    def open_history(self):
+        """Open history browser window with search."""
+        global HISTORY
+        if not HISTORY:
+            return
+        
+        win = tk.Toplevel(self.root)
+        win.title("Transcription History")
+        win.geometry("500x400")
+        win.configure(bg=self.bg_dark)
+        
+        # Search frame
+        search_frame = tk.Frame(win, bg=self.bg_dark)
+        search_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        tk.Label(search_frame, text="🔍", bg=self.bg_dark, fg=self.text_primary,
+                font=("Segoe UI", 12)).pack(side=tk.LEFT)
+        
+        search_var = tk.StringVar()
+        search_entry = tk.Entry(search_frame, textvariable=search_var, 
+                               bg=self.bg_light, fg=self.text_primary,
+                               insertbackground=self.text_primary,
+                               font=("Segoe UI", 11), width=40)
+        search_entry.pack(side=tk.LEFT, padx=5)
+        
+        # Results listbox
+        results_frame = tk.Frame(win, bg=self.bg_dark)
+        results_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        scrollbar = tk.Scrollbar(results_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        listbox = tk.Listbox(results_frame, bg=self.bg_light, fg=self.text_primary,
+                            font=("Segoe UI", 10), selectmode=tk.SINGLE,
+                            yscrollcommand=scrollbar.set)
+        listbox.pack(fill=tk.BOTH, expand=True)
+        scrollbar.config(command=listbox.yview)
+        
+        # Copy button
+        def copy_selected():
+            selection = listbox.curselection()
+            if selection:
+                idx = selection[0]
+                entry = filtered_history[idx]
+                pyperclip.copy(entry.get("text", ""))
+        
+        btn_frame = tk.Frame(win, bg=self.bg_dark)
+        btn_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        copy_btn = tk.Button(btn_frame, text="📋 Copy Selected", command=copy_selected,
+                            bg=self.border_color, fg=self.text_primary,
+                            font=("Segoe UI", 10))
+        copy_btn.pack(side=tk.LEFT)
+        
+        # Filter history based on search
+        filtered_history = HISTORY.copy()
+        
+        def update_results(*args):
+            nonlocal filtered_history
+            query = search_var.get().lower()
+            listbox.delete(0, tk.END)
+            filtered_history = []
+            
+            for entry in HISTORY:
+                text = entry.get("text", "").lower()
+                if not query or query in text:
+                    filtered_history.append(entry)
+                    timestamp = entry.get("timestamp", "")
+                    preview = entry.get("text", "")[:50]
+                    listbox.insert(tk.END, f"[{timestamp}] {preview}...")
+        
+        search_var.trace("w", update_results)
+        update_results()
+        
+        win.transient(self.root)
+        win.grab_set()
+
     def quit_app(self):
         state.running = False
         keyboard.unhook_all()
