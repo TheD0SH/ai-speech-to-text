@@ -19,16 +19,6 @@ if sys.stderr:
 
 print("Loading Voice Type...")
 
-# Load environment variables from .env file if it exists
-try:
-    from dotenv import load_dotenv
-    env_path = Path(__file__).parent / ".env"
-    if env_path.exists():
-        load_dotenv(env_path)
-        print("[env] Loaded .env file")
-except ImportError:
-    print("[env] python-dotenv not installed, skipping .env")
-
 import keyboard
 import pyperclip
 import tkinter as tk
@@ -43,25 +33,36 @@ print("Ready!")
 
 # Config
 CONFIG_FILE = Path.home() / ".voice-type-config.json"
+MACROS_FILE = Path.home() / ".voice-type-macros.json"
+STATS_FILE = Path.home() / ".voice-type-stats.json"
 SAMPLE_RATE = 16000
 
 # Default filter words - common filler words the model outputs when nothing is said
 DEFAULT_FILTER_WORDS = ["thank you", "thanks", "thank you.", "thanks."]
 
+# Default macros
+DEFAULT_MACROS = {
+    "signature": "Best regards,",
+    "cheers": "Cheers,",
+    "thanks ahead": "Thanks in advance!",
+    "let me check": "Let me check on that and get back to you.",
+    "sounds good": "Sounds good, let me know if you need anything else!",
+    "will do": "Will do!",
+    "today date": "{{DATE}}",
+    "now time": "{{TIME}}",
+}
 
-def validate_api_key(key):
-    """Validate Groq API key format."""
-    if not key:
-        return False, "API key is empty"
-    key = key.strip()
-    if len(key) < 20:
-        return False, "API key is too short"
-    if not key.startswith("gsk_"):
-        return False, "API key should start with 'gsk_'"
-    return True, "Valid"
+# Statistics tracking
+DEFAULT_STATS = {
+    "total_words": 0,
+    "total_sessions": 0,
+    "total_transcriptions": 0,
+    "total_minutes": 0.0,
+    "first_used": None,
+    "last_used": None,
+}
 
-
-# Load config from multiple sources (priority: JSON config > .env > old config)
+# Load config
 config_data = {
     "api_key": "",
     "mic_index": None,
@@ -69,27 +70,16 @@ config_data = {
     "accounting_mode": False,
     "filter_words": DEFAULT_FILTER_WORDS
 }
-
-# Try JSON config first
 if CONFIG_FILE.exists():
     try:
         config_data = json.loads(CONFIG_FILE.read_text())
-        print(f"[config] Loaded from {CONFIG_FILE}")
     except:
         pass
-
-# Try .env file as fallback for API key
-if not config_data.get("api_key"):
-    env_key = os.environ.get("GROQ_API_KEY", "")
-    if env_key:
-        config_data["api_key"] = env_key
-        print("[config] Loaded API key from environment")
 
 # Also try old config file for backward compatibility
 old_config = Path.home() / "voice-type-config.txt"
 if not config_data.get("api_key") and old_config.exists():
     config_data["api_key"] = old_config.read_text().strip()
-    print("[config] Loaded from legacy config")
 
 API_KEY = config_data.get("api_key", "")
 MIC_INDEX = config_data.get("mic_index")
@@ -99,18 +89,29 @@ ACCOUNTING_COMMA = config_data.get("accounting_comma", False)
 CASUAL_MODE = config_data.get("casual_mode", False)
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
 
-# Validate API key on startup
-if API_KEY:
-    is_valid, msg = validate_api_key(API_KEY)
-    if not is_valid:
-        print(f"[warning] API key validation: {msg}")
-else:
-    print("[info] No API key configured")
+# Load macros
+MACROS = DEFAULT_MACROS.copy()
+if MACROS_FILE.exists():
+    try:
+        user_macros = json.loads(MACROS_FILE.read_text())
+        MACROS.update(user_macros)
+        print(f"[startup] Loaded {len(user_macros)} custom macros")
+    except:
+        pass
+
+# Load statistics
+STATS = DEFAULT_STATS.copy()
+if STATS_FILE.exists():
+    try:
+        saved_stats = json.loads(STATS_FILE.read_text())
+        STATS.update(saved_stats)
+    except:
+        pass
 
 # Debug: Show config on startup
 print(f"[startup] Config file: {CONFIG_FILE}")
 print(f"[startup] ACCOUNTING_MODE from config: {ACCOUNTING_MODE}")
-print(f"[startup] Hotkey: {HOTKEY.upper()}")
+print(f"[startup] Full config: {config_data}")
 
 
 # State
@@ -471,6 +472,61 @@ class FloatingWidget:
         tk.Label(content, text="Example: thank you, thanks", 
                 bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
 
+        # Statistics Section
+        tk.Label(content, text="📊 Statistics", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        
+        stats_frame = tk.Frame(content, bg=self.bg_light, padx=10, pady=10)
+        stats_frame.pack(fill=tk.X, pady=(5, 15))
+        
+        stats_labels = [
+            f"📝 Words typed: {STATS.get('total_words', 0):,}",
+            f"🎤 Transcriptions: {STATS.get('total_transcriptions', 0):,}",
+            f"📅 First used: {STATS.get('first_used', 'Never') or 'Never'}",
+            f"🕒 Last used: {STATS.get('last_used', 'Never') or 'Never'}",
+        ]
+        
+        for stat_text in stats_labels:
+            tk.Label(stats_frame, text=stat_text, bg=self.bg_light, fg=self.text_primary,
+                    font=("Segoe UI", 10)).pack(anchor="w")
+        
+        def reset_stats():
+            global STATS
+            STATS = DEFAULT_STATS.copy()
+            STATS_FILE.write_text(json.dumps(STATS, indent=2))
+            stats_updated_label.config(text="✓ Stats reset!")
+            win.after(1500, lambda: stats_updated_label.config(text=""))
+        
+        stats_btn_frame = tk.Frame(stats_frame, bg=self.bg_light)
+        stats_btn_frame.pack(anchor="w", pady=(10, 0))
+        
+        stats_updated_label = tk.Label(stats_btn_frame, text="", bg=self.bg_light, 
+                                       fg=self.accent_success, font=("Segoe UI", 9))
+        stats_updated_label.pack(side=tk.LEFT)
+        
+        tk.Button(stats_btn_frame, text="Reset Stats", bg=self.bg_medium, fg=self.text_primary,
+                 command=reset_stats, font=("Segoe UI", 9), relief="flat", cursor="hand2").pack(side=tk.LEFT, padx=(0, 5))
+
+        # Macros Section (collapsible)
+        tk.Label(content, text="🔧 Voice Macros", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="Voice commands that expand to full text:", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w")
+        
+        # Show a few example macros
+        macros_text = tk.Text(content, height=4, width=50, bg=self.bg_light, fg=self.text_primary,
+                             font=("Segoe UI", 9), relief="flat", wrap=tk.WORD)
+        macros_text.pack(fill=tk.X, pady=(5, 5))
+        
+        example_macros = list(MACROS.items())[:5]
+        macros_display = "\n".join([f'"{k}" → "{v[:30]}..."' if len(v) > 30 else f'"{k}" → "{v}"' 
+                                   for k, v in example_macros])
+        macros_text.insert("1.0", macros_display)
+        macros_text.config(state="disabled")
+        
+        tk.Label(content, text=f"💡 {len(MACROS)} macros loaded. Edit ~/.voice-type-macros.json to customize.", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
+
         # Buttons
         btn_frame = tk.Frame(content, bg=self.bg_dark)
         btn_frame.pack(pady=20)
@@ -610,20 +666,13 @@ def create_tray_icon():
     return pystray.Icon("voice_type", image, f"Voice Type (Hold {HOTKEY.upper()})", menu)
 
 
-def transcribe_with_groq(audio_path, retry_count=0):
-    """Use Groq Whisper API for transcription with retry logic."""
+def transcribe_with_groq(audio_path):
+    """Use Groq Whisper API for transcription."""
     global API_KEY
 
     if not API_KEY:
-        return None, "No API key configured. Open Settings to add your Groq API key."
+        return None, "No API key"
 
-    # Validate API key format
-    is_valid, msg = validate_api_key(API_KEY)
-    if not is_valid:
-        return None, f"Invalid API key: {msg}"
-
-    max_retries = 3
-    
     try:
         url = "https://api.groq.com/openai/v1/audio/transcriptions"
         headers = {"Authorization": f"Bearer {API_KEY}"}
@@ -632,46 +681,17 @@ def transcribe_with_groq(audio_path, retry_count=0):
             files = {"file": ("audio.wav", f, "audio/wav")}
             data = {"model": "whisper-large-v3-turbo", "response_format": "json"}
 
-            timeout = 30 + (retry_count * 10)  # Increase timeout on retries
-            with httpx.Client(timeout=timeout) as client:
+            with httpx.Client(timeout=30) as client:
                 response = client.post(url, headers=headers, files=files, data=data)
 
         if response.status_code == 200:
             result = response.json()
             return result.get("text"), None
-        elif response.status_code == 401:
-            return None, "Invalid API key. Check your key at console.groq.com"
-        elif response.status_code == 429:
-            # Rate limited - retry after delay
-            if retry_count < max_retries:
-                wait_time = 2 ** retry_count  # Exponential backoff
-                print(f"[API] Rate limited, retrying in {wait_time}s...")
-                time.sleep(wait_time)
-                return transcribe_with_groq(audio_path, retry_count + 1)
-            return None, "Rate limited. Try again in a moment."
-        elif response.status_code >= 500:
-            # Server error - retry
-            if retry_count < max_retries:
-                wait_time = 2 ** retry_count
-                print(f"[API] Server error, retrying in {wait_time}s...")
-                time.sleep(wait_time)
-                return transcribe_with_groq(audio_path, retry_count + 1)
-            return None, f"Groq server error (HTTP {response.status_code})"
         else:
-            return None, f"API error (HTTP {response.status_code})"
+            return None, f"HTTP {response.status_code}"
 
-    except httpx.TimeoutException:
-        if retry_count < max_retries:
-            print(f"[API] Timeout, retrying...")
-            return transcribe_with_groq(audio_path, retry_count + 1)
-        return None, "Connection timeout. Check your internet."
-    except httpx.ConnectError:
-        return None, "Cannot connect to Groq. Check your internet connection."
     except Exception as e:
-        error_msg = str(e)
-        if "Connection" in error_msg or "network" in error_msg.lower():
-            return None, "Network error. Check your internet connection."
-        return None, f"Error: {error_msg[:50]}"
+        return None, str(e)
 
 
 # Emoji mapping for voice commands
@@ -1038,16 +1058,73 @@ def type_text(text):
         print("[filtered] Text was filtered out, nothing to type")
         return
     
+    # Apply voice macros (expand text shortcuts)
+    text = apply_macros(text)
+    
     # Convert emoji phrases to actual emojis
     text = convert_emojis(text)
     
     # Apply casual mode (lowercase, informal punctuation)
     text = apply_casual_mode(text)
     
+    # Update statistics
+    update_stats(text)
+    
     print(f"[typing] {text}")
     pyperclip.copy(text)
     time.sleep(0.05)
     keyboard.press_and_release("ctrl+v")
+
+
+def apply_macros(text):
+    """Apply voice macros to expand shortcuts."""
+    global MACROS
+    
+    if not MACROS:
+        return text
+    
+    result = text
+    today = time.strftime("%Y-%m-%d")
+    now = time.strftime("%H:%M:%S")
+    datetime = time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Sort by length (longest first) to avoid partial matches
+    sorted_macros = sorted(MACROS.items(), key=lambda x: len(x[0]), reverse=True)
+    
+    for phrase, expansion in sorted_macros:
+        # Case-insensitive replacement
+        pattern = re.compile(re.escape(phrase), re.IGNORECASE)
+        
+        # Replace dynamic placeholders
+        expansion = expansion.replace("{{DATE}}", today)
+        expansion = expansion.replace("{{TIME}}", now)
+        expansion = expansion.replace("{{DATETIME}}", datetime)
+        
+        result = pattern.sub(expansion, result)
+    
+    # Clean up any double spaces
+    result = re.sub(r'\s+', ' ', result).strip()
+    
+    return result
+
+
+def update_stats(text):
+    """Update usage statistics."""
+    global STATS
+    
+    word_count = len(text.split())
+    STATS["total_words"] += word_count
+    STATS["total_transcriptions"] += 1
+    STATS["last_used"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    if STATS["first_used"] is None:
+        STATS["first_used"] = STATS["last_used"]
+    
+    # Save stats to file
+    try:
+        STATS_FILE.write_text(json.dumps(STATS, indent=2))
+    except:
+        pass
 
 
 def record_and_transcribe():
@@ -1168,17 +1245,27 @@ def hotkey_loop():
 
 
 def main():
-    global widget, tray_icon
+    global widget, tray_icon, STATS
 
     print("=" * 50)
     print(f"Voice Type - Groq Whisper (Hold {HOTKEY.upper()})")
     print("=" * 50)
+
+    # Increment session count
+    STATS["total_sessions"] += 1
+    try:
+        STATS_FILE.write_text(json.dumps(STATS, indent=2))
+    except:
+        pass
 
     if not API_KEY:
         print("\n  No API key found!")
         print("Get free key: https://console.groq.com/keys")
     else:
         print(f"API key loaded ({len(API_KEY)} chars)")
+    
+    if MACROS:
+        print(f"Macros loaded: {len(MACROS)}")
 
     widget = FloatingWidget()
 
