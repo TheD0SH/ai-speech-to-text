@@ -3,6 +3,9 @@ Voice Type - Hold Shift to speak, release to type.
 Uses Groq Whisper API for fast, accurate speech-to-text.
 """
 
+__version__ = "2.0.0"
+__author__ = "Anton AI Agent"
+
 import sys
 import os
 import threading
@@ -440,7 +443,7 @@ class FloatingWidget:
         settings_open = True
 
         win = tk.Toplevel()
-        win.title("Voice Type Settings")
+        win.title(f"VoiceType v{__version__} Settings")
         win.geometry("500x700")
         win.configure(bg=self.bg_dark)
         win.resizable(False, False)
@@ -882,7 +885,7 @@ class FloatingWidget:
                 widget.root.attributes("-topmost", ALWAYS_ON_TOP)
 
             if tray_icon:
-                tray_icon.title = f"Voice Type (Hold {HOTKEY.upper()})"
+                tray_icon.title = f"VoiceType v{__version__} (Hold {HOTKEY.upper()})"
 
             save_btn.config(text="✓ Saved!", bg=self.accent_success)
             win.after(1500, lambda: save_btn.config(text="Save", bg=self.border_color))
@@ -928,7 +931,7 @@ class FloatingWidget:
             return
         
         win = tk.Toplevel(self.root)
-        win.title("Transcription History")
+        win.title(f"VoiceType v{__version__} - History")
         win.geometry("500x400")
         win.configure(bg=self.bg_dark)
         
@@ -1076,7 +1079,7 @@ def create_tray_icon():
         pystray.MenuItem("Quit", on_quit),
     )
 
-    return pystray.Icon("voice_type", image, f"Voice Type (Hold {HOTKEY.upper()})", menu)
+    return pystray.Icon("voice_type", image, f"VoiceType v{__version__} (Hold {HOTKEY.upper()})", menu)
 
 
 def transcribe_with_groq(audio_path):
@@ -1984,7 +1987,7 @@ def main():
     global widget, tray_icon, STATS
 
     print("=" * 50)
-    print(f"Voice Type - Groq Whisper (Hold {HOTKEY.upper()})")
+    print(f"Voice Type v{__version__} - Groq Whisper (Hold {HOTKEY.upper()})")
     print("=" * 50)
 
     # Increment session count
