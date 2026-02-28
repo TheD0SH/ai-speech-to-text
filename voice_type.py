@@ -77,6 +77,7 @@ config_data = {
     "language": "auto",  # Auto-detect language or specify (en, es, fr, de, etc.)
     "auto_stop": False,  # Auto-stop recording after silence
     "silence_threshold": 2.0,  # Seconds of silence before auto-stop
+    "always_on_top": True,  # Widget always on top
     # Granular punctuation controls
     "punctuation": {
         "periods": True,
@@ -115,6 +116,7 @@ QUICKEN_MODE = config_data.get("quicken_mode", False)  # Character-by-character 
 LANGUAGE = config_data.get("language", "auto")  # Auto-detect or specify language
 AUTO_STOP = config_data.get("auto_stop", False)  # Auto-stop recording after silence
 SILENCE_THRESHOLD = config_data.get("silence_threshold", 2.0)  # Seconds of silence before auto-stop
+ALWAYS_ON_TOP = config_data.get("always_on_top", True)  # Widget always on top
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
 
 # Granular punctuation settings
@@ -219,7 +221,7 @@ class FloatingWidget:
     def __init__(self):
         self.root = tk.Tk()
         self.root.overrideredirect(True)
-        self.root.attributes("-topmost", True)
+        self.root.attributes("-topmost", ALWAYS_ON_TOP)
         
         # Show in taskbar - this makes it behave like a normal app
         self.root.attributes("-toolwindow", False)
@@ -785,6 +787,24 @@ class FloatingWidget:
         )
         autostop_check.pack(anchor="w", pady=(0, 5))
         tk.Label(content, text="   Automatically stops recording when you stop talking", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+        
+        # Always on top toggle
+        ontop_var = tk.BooleanVar(value=ALWAYS_ON_TOP)
+        ontop_check = tk.Checkbutton(
+            content,
+            text="📌 Widget always on top",
+            variable=ontop_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        ontop_check.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Disable if widget blocks other windows", 
                 bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
 
         # Buttons
@@ -792,7 +812,7 @@ class FloatingWidget:
         btn_frame.pack(pady=20)
 
         def save():
-            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME, QUICKEN_MODE, LANGUAGE, AUTO_STOP
+            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME, QUICKEN_MODE, LANGUAGE, AUTO_STOP, ALWAYS_ON_TOP
             API_KEY = api_entry.get().strip()
             idx = mic_combo.current()
             if idx >= 0 and mics:
@@ -809,6 +829,7 @@ class FloatingWidget:
             QUICKEN_MODE = quicken_var.get()
             LANGUAGE = language_var.get()
             AUTO_STOP = autostop_var.get()
+            ALWAYS_ON_TOP = ontop_var.get()
             
             filter_text_val = filter_entry.get().strip()
             if filter_text_val:
@@ -832,8 +853,13 @@ class FloatingWidget:
             config_data["quicken_mode"] = QUICKEN_MODE
             config_data["language"] = LANGUAGE
             config_data["auto_stop"] = AUTO_STOP
+            config_data["always_on_top"] = ALWAYS_ON_TOP
             config_data["filter_words"] = FILTER_WORDS
             CONFIG_FILE.write_text(json.dumps(config_data))
+            
+            # Apply always-on-top setting immediately
+            if widget:
+                widget.root.attributes("-topmost", ALWAYS_ON_TOP)
 
             if tray_icon:
                 tray_icon.title = f"Voice Type (Hold {HOTKEY.upper()})"
