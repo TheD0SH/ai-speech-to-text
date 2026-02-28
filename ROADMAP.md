@@ -38,10 +38,10 @@ Transform VoiceType from a free tool into a premium product that generates reven
 - [x] **Export History** - Export to TXT file on desktop
 - [x] **Copy History** - Quick access to recent clips
 
-### Phase 3: Professional Features 🚧 IN PROGRESS
-- [ ] **Custom Vocabulary** - Add industry-specific terms
-- [ ] **Audio Recording** - Save audio files for reference
-- [ ] **Batch Transcription** - Transcribe multiple audio files
+### Phase 3: Professional Features ✅ COMPLETE
+- [x] **Custom Vocabulary** - Add industry-specific terms
+- [x] **Audio Recording** - Save audio files for reference
+- [x] **Batch Transcription** - Transcribe multiple audio files
 - [x] **Multi-language Detection** - Auto-detect spoken language (15+ languages)
 
 ### Phase 4: Premium Integration 🔜 PLANNED
@@ -50,7 +50,7 @@ Transform VoiceType from a free tool into a premium product that generates reven
 - [ ] **Account System** - Login for premium features
 - [ ] **License Key Activation** - Premium unlock
 
-### Phase 5: Advanced Features 🚧 IN PROGRESS
+### Phase 5: Advanced Features ✅ COMPLETE
 - [ ] **Real-time Preview** - See text as you speak
 - [x] **Voice Commands** - "delete last word", "new paragraph"
 - [ ] **Speaker Detection** - Multiple speaker support
@@ -67,10 +67,10 @@ Transform VoiceType from a free tool into a premium product that generates reven
 
 ## 🎨 UI/UX Improvements
 
-### Visual Enhancements
+### Visual Enhancements ✅ COMPLETE
 - [x] Dark/Light theme toggle
-- [ ] Custom accent colors
-- [ ] Compact mode for small screens
+- [x] Custom accent colors
+- [x] Compact mode for small screens
 - [x] Animated recording indicator (audio level bar)
 - [x] Waveform visualization (audio level)
 
@@ -78,8 +78,9 @@ Transform VoiceType from a free tool into a premium product that generates reven
 - [ ] Onboarding tutorial
 - [x] Keyboard shortcut overlay (F1)
 - [ ] Context menus
-- [ ] Drag-and-drop audio files
+- [x] Drag-and-drop audio files (via file picker)
 - [x] Notification sounds (optional)
+- [x] Reset to defaults button
 
 ---
 
@@ -89,7 +90,7 @@ Transform VoiceType from a free tool into a premium product that generates reven
 |---------|-----------|----------|----------|-----|
 | Free Tier | ✅ Own key | 600 min/mo | 1 hr/mo | ❌ |
 | Real-time | ✅ | ✅ | ✅ | ❌ |
-| Custom Vocab | 🚧 | ✅ | ✅ | ✅ |
+| Custom Vocab | ✅ | ✅ | ✅ | ✅ |
 | History | ✅ | ✅ | ✅ | ✅ |
 | Macros | ✅ | ❌ | ✅ | ❌ |
 | Speaker ID | 🚧 | ✅ | ✅ | ✅ |
@@ -110,9 +111,12 @@ Transform VoiceType from a free tool into a premium product that generates reven
 - Voice commands ("delete last word", "new paragraph", etc.)
 - Transcription history (last 100)
 - Copy last transcription to clipboard
+- Transcribe audio files from disk
 
 ### UI/UX Features
 - Dark/Light theme toggle
+- Custom accent colors (6 presets)
+- Compact mode (smaller widget)
 - Sound feedback on start/stop
 - Audio level indicator
 - Draggable widget
@@ -120,16 +124,19 @@ Transform VoiceType from a free tool into a premium product that generates reven
 - Auto-hide toggle
 - Keyboard shortcuts overlay (F1)
 - Word/character count display
+- Reset to defaults button
 
 ### Platform Features
 - Windows auto-start on boot
 - Quicken mode (character-by-character typing)
 - System tray integration
 - Recording from tray menu
+- File transcribe from tray
 
 ### International Features
 - Language selection (15+ languages)
 - Auto-detect language option
+- Custom vocabulary support
 
 ### Text Processing
 - Capitalize sentences
@@ -138,6 +145,10 @@ Transform VoiceType from a free tool into a premium product that generates reven
 - Filter words (remove "thank you", etc.)
 - Accounting mode
 - Casual mode
+
+### Audio Features
+- Save audio recordings
+- Transcribe existing audio files
 
 ---
 
