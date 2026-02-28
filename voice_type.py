@@ -75,6 +75,8 @@ config_data = {
     "history_enabled": True,
     "quicken_mode": False,  # Type character-by-character for Quicken compatibility
     "language": "auto",  # Auto-detect language or specify (en, es, fr, de, etc.)
+    "auto_stop": False,  # Auto-stop recording after silence
+    "silence_threshold": 2.0,  # Seconds of silence before auto-stop
     # Granular punctuation controls
     "punctuation": {
         "periods": True,
@@ -108,6 +110,8 @@ THEME = config_data.get("theme", "dark")  # "dark" or "light"
 HISTORY_ENABLED = config_data.get("history_enabled", True)
 QUICKEN_MODE = config_data.get("quicken_mode", False)  # Character-by-character typing for Quicken
 LANGUAGE = config_data.get("language", "auto")  # Auto-detect or specify language
+AUTO_STOP = config_data.get("auto_stop", False)  # Auto-stop recording after silence
+SILENCE_THRESHOLD = config_data.get("silence_threshold", 2.0)  # Seconds of silence before auto-stop
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
 
 # Granular punctuation settings
@@ -747,12 +751,33 @@ class FloatingWidget:
         tk.Label(lang_frame, text="  Auto = detect automatically", 
                 bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(side=tk.LEFT)
 
+        # Auto-stop on silence
+        tk.Label(content, text="🎤 Recording", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        
+        autostop_var = tk.BooleanVar(value=AUTO_STOP)
+        autostop_check = tk.Checkbutton(
+            content,
+            text="🔇 Auto-stop after silence (hands-free mode)",
+            variable=autostop_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        autostop_check.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Automatically stops recording when you stop talking", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
+
         # Buttons
         btn_frame = tk.Frame(content, bg=self.bg_dark)
         btn_frame.pack(pady=20)
 
         def save():
-            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME, QUICKEN_MODE, LANGUAGE
+            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME, QUICKEN_MODE, LANGUAGE, AUTO_STOP
             API_KEY = api_entry.get().strip()
             idx = mic_combo.current()
             if idx >= 0 and mics:
@@ -768,6 +793,7 @@ class FloatingWidget:
             THEME = theme_var.get()
             QUICKEN_MODE = quicken_var.get()
             LANGUAGE = language_var.get()
+            AUTO_STOP = autostop_var.get()
             
             filter_text_val = filter_entry.get().strip()
             if filter_text_val:
@@ -790,6 +816,7 @@ class FloatingWidget:
             config_data["theme"] = THEME
             config_data["quicken_mode"] = QUICKEN_MODE
             config_data["language"] = LANGUAGE
+            config_data["auto_stop"] = AUTO_STOP
             config_data["filter_words"] = FILTER_WORDS
             CONFIG_FILE.write_text(json.dumps(config_data))
 
@@ -1544,6 +1571,8 @@ def record_and_transcribe():
 
         frames = []
         start_time = time.time()
+        last_sound_time = time.time()  # Track when we last heard sound
+        silence_start = None
 
         while keyboard.is_pressed(HOTKEY):
             data = stream.read(chunk, exception_on_overflow=False)
@@ -1558,6 +1587,23 @@ def record_and_transcribe():
             # Update widget level indicator
             if widget:
                 widget.root.after(0, lambda l=level: widget.update_level(l))
+            
+            # Silence detection for auto-stop
+            if AUTO_STOP:
+                # Consider it sound if level is above 2% (background noise threshold)
+                if level > 0.02:
+                    last_sound_time = time.time()
+                    silence_start = None
+                else:
+                    # Track silence start
+                    if silence_start is None:
+                        silence_start = time.time()
+                    else:
+                        silence_duration = time.time() - silence_start
+                        # Auto-stop after threshold seconds of silence
+                        if silence_duration >= SILENCE_THRESHOLD:
+                            print(f"[auto-stop] {SILENCE_THRESHOLD}s silence detected")
+                            break
 
         duration = time.time() - start_time
         print(f"Recorded {duration:.1f}s")
