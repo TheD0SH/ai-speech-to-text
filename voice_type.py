@@ -35,33 +35,7 @@ print("Ready!")
 CONFIG_FILE = Path.home() / ".voice-type-config.json"
 MACROS_FILE = Path.home() / ".voice-type-macros.json"
 STATS_FILE = Path.home() / ".voice-type-stats.json"
-HISTORY_FILE = Path.home() / ".voice-type-history.json"
 SAMPLE_RATE = 16000
-
-# Sound feedback (cross-platform)
-def play_sound(sound_type="start"):
-    """Play a feedback sound (start/stop recording)."""
-    try:
-        if sys.platform == "win32":
-            import winsound
-            if sound_type == "start":
-                winsound.Beep(800, 100)
-            elif sound_type == "stop":
-                winsound.Beep(600, 100)
-            elif sound_type == "done":
-                winsound.Beep(1000, 150)
-            elif sound_type == "error":
-                winsound.Beep(400, 200)
-        elif sys.platform == "darwin":
-            import subprocess
-            if sound_type == "start":
-                subprocess.run(["afplay", "/System/Library/Sounds/Pop.aiff"], capture_output=True)
-            elif sound_type == "done":
-                subprocess.run(["afplay", "/System/Library/Sounds/Glass.aiff"], capture_output=True)
-            elif sound_type == "error":
-                subprocess.run(["afplay", "/System/Library/Sounds/Basso.aiff"], capture_output=True)
-    except:
-        pass
 
 # Default filter words - common filler words the model outputs when nothing is said
 DEFAULT_FILTER_WORDS = ["thank you", "thanks", "thank you.", "thanks."]
@@ -94,9 +68,6 @@ config_data = {
     "mic_index": None,
     "hotkey": "shift",
     "accounting_mode": False,
-    "sound_feedback": True,
-    "history_enabled": True,
-    "mini_mode": False,
     "filter_words": DEFAULT_FILTER_WORDS
 }
 if CONFIG_FILE.exists():
@@ -116,9 +87,7 @@ HOTKEY = config_data.get("hotkey", "shift")
 ACCOUNTING_MODE = config_data.get("accounting_mode", False)
 ACCOUNTING_COMMA = config_data.get("accounting_comma", False)
 CASUAL_MODE = config_data.get("casual_mode", False)
-SOUND_FEEDBACK = config_data.get("sound_feedback", True)
-HISTORY_ENABLED = config_data.get("history_enabled", True)
-MINI_MODE = config_data.get("mini_mode", False)
+THEME = config_data.get("theme", "dark")  # "dark" or "light"
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
 
 # Load macros
@@ -137,35 +106,6 @@ if STATS_FILE.exists():
     try:
         saved_stats = json.loads(STATS_FILE.read_text())
         STATS.update(saved_stats)
-    except:
-        pass
-
-# Load history (last 100 transcriptions)
-HISTORY = []
-if HISTORY_FILE.exists() and HISTORY_ENABLED:
-    try:
-        HISTORY = json.loads(HISTORY_FILE.read_text())
-        print(f"[startup] Loaded {len(HISTORY)} history items")
-    except:
-        pass
-
-
-def save_to_history(text):
-    """Save transcription to history."""
-    global HISTORY
-    if not HISTORY_ENABLED or not text:
-        return
-    
-    entry = {
-        "text": text,
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "words": len(text.split())
-    }
-    HISTORY.insert(0, entry)
-    HISTORY = HISTORY[:100]  # Keep last 100
-    
-    try:
-        HISTORY_FILE.write_text(json.dumps(HISTORY, indent=2))
     except:
         pass
 
@@ -236,17 +176,35 @@ class FloatingWidget:
         # Show in taskbar - this makes it behave like a normal app
         self.root.attributes("-toolwindow", False)
 
-        # Modern color scheme - dark mode
-        self.bg_dark = "#1a1a2e"
-        self.bg_medium = "#16213e"
-        self.bg_light = "#0f3460"
-        self.accent_primary = "#4a9eff"
-        self.accent_secondary = "#533483"
-        self.accent_success = "#00ff88"
-        self.accent_warning = "#ffc107"
-        self.text_primary = "#ffffff"
-        self.text_secondary = "#a0a0a0"
-        self.border_color = "#4a9eff"
+        # Theme support - dark or light
+        self.apply_theme(THEME)
+    
+    def apply_theme(self, theme_name):
+        """Apply color theme (dark or light)."""
+        if theme_name == "light":
+            # Light theme colors
+            self.bg_dark = "#f5f5f5"
+            self.bg_medium = "#ffffff"
+            self.bg_light = "#e8e8e8"
+            self.accent_primary = "#0066cc"
+            self.accent_secondary = "#6b5b95"
+            self.accent_success = "#28a745"
+            self.accent_warning = "#ffc107"
+            self.text_primary = "#1a1a1a"
+            self.text_secondary = "#666666"
+            self.border_color = "#0066cc"
+        else:
+            # Dark theme colors (default)
+            self.bg_dark = "#1a1a2e"
+            self.bg_medium = "#16213e"
+            self.bg_light = "#0f3460"
+            self.accent_primary = "#4a9eff"
+            self.accent_secondary = "#533483"
+            self.accent_success = "#00ff88"
+            self.accent_warning = "#ffc107"
+            self.text_primary = "#ffffff"
+            self.text_secondary = "#a0a0a0"
+            self.border_color = "#4a9eff"
 
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
@@ -568,39 +526,7 @@ class FloatingWidget:
             font=("Segoe UI", 10),
             cursor="hand2"
         )
-        casual_check.pack(anchor="w", pady=(5, 5))
-
-        # Sound feedback option
-        sound_var = tk.BooleanVar(value=SOUND_FEEDBACK)
-        sound_check = tk.Checkbutton(
-            content,
-            text="🔔 Sound Feedback (beep on start/stop)",
-            variable=sound_var,
-            bg=self.bg_dark,
-            fg=self.text_primary,
-            selectcolor=self.bg_light,
-            activebackground=self.bg_dark,
-            activeforeground=self.text_primary,
-            font=("Segoe UI", 10),
-            cursor="hand2"
-        )
-        sound_check.pack(anchor="w", pady=(5, 5))
-
-        # History option
-        history_var = tk.BooleanVar(value=HISTORY_ENABLED)
-        history_check = tk.Checkbutton(
-            content,
-            text="📜 Save Transcription History (last 100)",
-            variable=history_var,
-            bg=self.bg_dark,
-            fg=self.text_primary,
-            selectcolor=self.bg_light,
-            activebackground=self.bg_dark,
-            activeforeground=self.text_primary,
-            font=("Segoe UI", 10),
-            cursor="hand2"
-        )
-        history_check.pack(anchor="w", pady=(5, 15))
+        casual_check.pack(anchor="w", pady=(5, 15))
 
         # Filter Words
         tk.Label(content, text="🚫 Filter Words", font=("Segoe UI", 11, "bold"),
@@ -686,12 +612,26 @@ class FloatingWidget:
             )
             autostart_check.pack(anchor="w", pady=(0, 15))
 
+        # Theme selection
+        tk.Label(content, text="🎨 Theme", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        
+        theme_frame = tk.Frame(content, bg=self.bg_dark)
+        theme_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        theme_var = tk.StringVar(value=THEME)
+        theme_combo = ttk.Combobox(theme_frame, textvariable=theme_var, 
+                                   values=["dark", "light"], state="readonly", width=20)
+        theme_combo.pack(side=tk.LEFT)
+        tk.Label(theme_frame, text="  Restart app to apply theme change", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(side=tk.LEFT)
+
         # Buttons
         btn_frame = tk.Frame(content, bg=self.bg_dark)
         btn_frame.pack(pady=20)
 
         def save():
-            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, SOUND_FEEDBACK, HISTORY_ENABLED
+            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME
             API_KEY = api_entry.get().strip()
             idx = mic_combo.current()
             if idx >= 0 and mics:
@@ -704,8 +644,7 @@ class FloatingWidget:
             ACCOUNTING_MODE = accounting_var.get()
             ACCOUNTING_COMMA = comma_var.get()
             CASUAL_MODE = casual_var.get()
-            SOUND_FEEDBACK = sound_var.get()
-            HISTORY_ENABLED = history_var.get()
+            THEME = theme_var.get()
             
             filter_text_val = filter_entry.get().strip()
             if filter_text_val:
@@ -725,8 +664,7 @@ class FloatingWidget:
             config_data["accounting_mode"] = ACCOUNTING_MODE
             config_data["accounting_comma"] = ACCOUNTING_COMMA
             config_data["casual_mode"] = CASUAL_MODE
-            config_data["sound_feedback"] = SOUND_FEEDBACK
-            config_data["history_enabled"] = HISTORY_ENABLED
+            config_data["theme"] = THEME
             config_data["filter_words"] = FILTER_WORDS
             CONFIG_FILE.write_text(json.dumps(config_data))
 
@@ -1383,7 +1321,7 @@ def apply_macros(text):
 
 
 def update_stats(text):
-    """Update usage statistics and save to history."""
+    """Update usage statistics."""
     global STATS
     
     word_count = len(text.split())
@@ -1399,23 +1337,13 @@ def update_stats(text):
         STATS_FILE.write_text(json.dumps(STATS, indent=2))
     except:
         pass
-    
-    # Save to history
-    save_to_history(text)
 
 
 def record_and_transcribe():
     """Record audio while Shift is held, then transcribe with Groq Whisper."""
-    global SOUND_FEEDBACK
-    
     # Show widget when recording starts
     if widget and widget.hidden:
         widget.root.after(0, widget.show_widget)
-    
-    # Play start sound
-    if SOUND_FEEDBACK:
-        play_sound("start")
-    
     update_status("recording", "Speak now...")
     print("Recording...")
 
@@ -1487,11 +1415,6 @@ def record_and_transcribe():
             text = text.strip()
             print(f"[whisper] {text}")
             update_status("done", text)
-            
-            # Play success sound
-            if SOUND_FEEDBACK:
-                play_sound("done")
-            
             type_text(text)
 
             def hide_after_done():
@@ -1502,10 +1425,6 @@ def record_and_transcribe():
             threading.Thread(target=hide_after_done, daemon=True).start()
         else:
             update_status("error", error or "Failed")
-            
-            # Play error sound
-            if SOUND_FEEDBACK:
-                play_sound("error")
 
             def hide_after_error():
                 time.sleep(2)
@@ -1517,11 +1436,6 @@ def record_and_transcribe():
     except Exception as e:
         update_status("error", str(e)[:30])
         print(f"Error: {e}")
-        
-        # Play error sound
-        if SOUND_FEEDBACK:
-            play_sound("error")
-        
         time.sleep(1.5)
         widget.root.after(0, widget.hide_widget)
     finally:
