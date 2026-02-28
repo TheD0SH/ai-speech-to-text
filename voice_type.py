@@ -246,7 +246,7 @@ class FloatingWidget:
         
         # Widget dimensions
         widget_width = 320
-        widget_height = 100
+        widget_height = 115  # Increased for level bar
         
         # Center horizontally, near bottom
         x = (screen_width - widget_width) // 2
@@ -317,7 +317,28 @@ class FloatingWidget:
             fg=self.text_secondary,
             bg=self.bg_medium,
         )
-        self.hint_label.pack(fill=tk.X, padx=15, pady=(0, 10))
+        self.hint_label.pack(fill=tk.X, padx=15, pady=(0, 5))
+        
+        # Audio level indicator (progress bar style)
+        self.level_frame = tk.Frame(self.content_frame, bg=self.bg_medium)
+        self.level_frame.pack(fill=tk.X, padx=15, pady=(0, 5))
+        
+        self.level_canvas = tk.Canvas(
+            self.level_frame,
+            width=280,
+            height=8,
+            bg=self.bg_light,
+            highlightthickness=0
+        )
+        self.level_canvas.pack(fill=tk.X)
+        
+        # Initialize level bar (green, shows mic input level)
+        self.level_bar = self.level_canvas.create_rectangle(
+            0, 0, 0, 8,
+            fill=self.accent_success,
+            outline=""
+        )
+        self.current_level = 0
 
         # Status colors
         self.colors = {
@@ -359,6 +380,30 @@ class FloatingWidget:
     def show_widget(self):
         self.hidden = False
         self.root.deiconify()
+    
+    def update_level(self, level):
+        """Update audio level indicator (0.0 to 1.0)."""
+        if not hasattr(self, 'level_canvas'):
+            return
+        
+        # Smooth the level changes
+        self.current_level = self.current_level * 0.7 + level * 0.3
+        
+        # Update bar width
+        canvas_width = 280
+        bar_width = int(canvas_width * min(self.current_level, 1.0))
+        
+        self.level_canvas.coords(self.level_bar, 0, 0, bar_width, 8)
+        
+        # Change color based on level
+        if self.current_level < 0.3:
+            color = self.accent_success  # Green - quiet
+        elif self.current_level < 0.7:
+            color = self.accent_warning  # Yellow - good
+        else:
+            color = "#ff4444"  # Red - too loud
+        
+        self.level_canvas.itemconfig(self.level_bar, fill=color)
 
     def open_settings(self):
         global settings_open
@@ -1434,6 +1479,16 @@ def record_and_transcribe():
         while keyboard.is_pressed(HOTKEY):
             data = stream.read(chunk, exception_on_overflow=False)
             frames.append(data)
+            
+            # Calculate audio level for visual feedback
+            import struct
+            samples = struct.unpack(f'<{len(data)//2}h', data)
+            max_sample = max(abs(s) for s in samples) if samples else 0
+            level = min(max_sample / 32768.0, 1.0)  # Normalize to 0-1
+            
+            # Update widget level indicator
+            if widget:
+                widget.root.after(0, lambda l=level: widget.update_level(l))
 
         duration = time.time() - start_time
         print(f"Recorded {duration:.1f}s")
