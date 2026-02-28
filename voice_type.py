@@ -25,7 +25,7 @@ print("Loading Voice Type...")
 import keyboard
 import pyperclip
 import tkinter as tk
-from tkinter import font as tkfont, ttk
+from tkinter import font as tkfont, ttk, messagebox
 import pyaudio
 import wave
 import httpx
@@ -1001,6 +1001,56 @@ class FloatingWidget:
             save_btn.config(text="✓ Saved!", bg=self.accent_success)
             win.after(1500, lambda: save_btn.config(text="Save", bg=self.border_color))
 
+        def reset_defaults():
+            """Reset all settings to defaults."""
+            if messagebox.askyesno("Reset Settings", "Reset all settings to defaults?\n\nAPI key will be preserved."):
+                global config_data, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, THEME
+                global QUICKEN_MODE, LANGUAGE, AUTO_STOP, ALWAYS_ON_TOP, AUTOHIDE_ENABLED, COMPACT_MODE, ACCENT_COLOR
+                global SAVE_AUDIO, CUSTOM_VOCABULARY, FILTER_WORDS
+                
+                # Preserve API key
+                saved_key = API_KEY
+                
+                # Reset to defaults
+                HOTKEY = "shift"
+                ACCOUNTING_MODE = False
+                ACCOUNTING_COMMA = False
+                CASUAL_MODE = False
+                THEME = "dark"
+                QUICKEN_MODE = False
+                LANGUAGE = "auto"
+                AUTO_STOP = False
+                ALWAYS_ON_TOP = True
+                AUTOHIDE_ENABLED = True
+                COMPACT_MODE = False
+                ACCENT_COLOR = "#6366f1"
+                SAVE_AUDIO = False
+                CUSTOM_VOCABULARY = []
+                FILTER_WORDS = DEFAULT_FILTER_WORDS
+                
+                # Update config but keep API key
+                config_data["api_key"] = saved_key
+                config_data["hotkey"] = HOTKEY
+                config_data["accounting_mode"] = ACCOUNTING_MODE
+                config_data["accounting_comma"] = ACCOUNTING_COMMA
+                config_data["casual_mode"] = CASUAL_MODE
+                config_data["theme"] = THEME
+                config_data["quicken_mode"] = QUICKEN_MODE
+                config_data["language"] = LANGUAGE
+                config_data["auto_stop"] = AUTO_STOP
+                config_data["always_on_top"] = ALWAYS_ON_TOP
+                config_data["autohide"] = AUTOHIDE_ENABLED
+                config_data["compact_mode"] = COMPACT_MODE
+                config_data["accent_color"] = ACCENT_COLOR
+                config_data["save_audio"] = SAVE_AUDIO
+                config_data["custom_vocabulary"] = CUSTOM_VOCABULARY
+                config_data["filter_words"] = FILTER_WORDS
+                
+                CONFIG_FILE.write_text(json.dumps(config_data))
+                
+                messagebox.showinfo("Reset Complete", "Settings reset to defaults.\nPlease reopen settings to see changes.")
+                close_settings()
+
         def get_key():
             import webbrowser
             webbrowser.open("https://console.groq.com/keys")
@@ -1021,6 +1071,9 @@ class FloatingWidget:
         save_btn = tk.Button(btn_frame, text="Save", bg=self.border_color, fg="white",
                             command=save, **btn_style)
         save_btn.pack(side=tk.LEFT, padx=5)
+        
+        tk.Button(btn_frame, text="Reset Defaults", bg="#ef4444", fg="white",
+                 command=reset_defaults, **btn_style).pack(side=tk.LEFT, padx=5)
         
         tk.Button(btn_frame, text="Get API Key", bg=self.accent_secondary, fg="white",
                  command=get_key, **btn_style).pack(side=tk.LEFT, padx=5)
@@ -1177,6 +1230,9 @@ def create_tray_icon():
     def on_export(icon, item):
         export_history()
 
+    def on_transcribe_file(icon, item):
+        transcribe_audio_file()
+
     def on_quit(icon, item):
         widget.root.after(0, widget.quit_app)
 
@@ -1184,6 +1240,8 @@ def create_tray_icon():
         pystray.MenuItem("Settings", on_settings),
         pystray.MenuItem("History", on_history),
         pystray.MenuItem("Export History", on_export),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("📁 Transcribe Audio File...", on_transcribe_file),
         pystray.MenuItem("Copy Last", on_copy_last, default=False),
         pystray.MenuItem("Show Widget", on_show),
         pystray.Menu.SEPARATOR,
@@ -1191,6 +1249,72 @@ def create_tray_icon():
     )
 
     return pystray.Icon("voice_type", image, f"VoiceType v{__version__} (Hold {HOTKEY.upper()})", menu)
+
+
+def transcribe_audio_file():
+    """Transcribe an existing audio file from disk."""
+    global last_transcription
+    
+    if not API_KEY:
+        print("[error] No API key set")
+        return
+    
+    from tkinter import filedialog
+    
+    file_path = filedialog.askopenfilename(
+        title="Select Audio File",
+        filetypes=[
+            ("Audio Files", "*.wav *.mp3 *.m4a *.ogg *.flac *.webm"),
+            ("WAV Files", "*.wav"),
+            ("MP3 Files", "*.mp3"),
+            ("All Files", "*.*")
+        ]
+    )
+    
+    if not file_path:
+        return
+    
+    print(f"[file] Transcribing: {file_path}")
+    update_status("processing", "Transcribing file...")
+    widget.show_widget()
+    
+    def do_transcribe():
+        global last_transcription
+        text, error = transcribe_with_groq(file_path)
+        
+        if text:
+            text = text.strip()
+            last_transcription = text
+            
+            # Apply text processing
+            if CAPITALIZE_SENTENCES:
+                text = text[0].upper() + text[1:] if text else text
+                text = re.sub(r'([.!?]\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text)
+            
+            word_count = len(text.split())
+            char_count = len(text)
+            update_status("done", f"{text}\n\n📝 {word_count} words | {char_count} chars")
+            
+            # Copy to clipboard
+            pyperclip.copy(text)
+            print(f"[file] Transcribed: {text[:50]}...")
+            
+            # Save to history
+            save_to_history(text)
+            
+            # Type the text
+            type_text(text)
+        else:
+            update_status("error", error or "Failed to transcribe")
+        
+        # Auto-hide after delay
+        def hide_after():
+            time.sleep(3)
+            if widget and AUTOHIDE_ENABLED:
+                widget.root.after(0, widget.hide_widget)
+        threading.Thread(target=hide_after, daemon=True).start()
+    
+    threading.Thread(target=do_transcribe, daemon=True).start()
 
 
 def transcribe_with_groq(audio_path):
