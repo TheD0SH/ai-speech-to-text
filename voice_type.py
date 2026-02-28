@@ -246,7 +246,7 @@ class FloatingWidget:
         
         # Widget dimensions
         widget_width = 320
-        widget_height = 115  # Increased for level bar
+        widget_height = 130  # Increased for word count
         
         # Center horizontally, near bottom
         x = (screen_width - widget_width) // 2
@@ -1531,7 +1531,11 @@ def record_and_transcribe():
         if text:
             text = text.strip()
             print(f"[whisper] {text}")
-            update_status("done", text)
+            
+            # Show word/character count
+            word_count = len(text.split())
+            char_count = len(text)
+            update_status("done", f"{text}\n\n📝 {word_count} words | {char_count} chars")
             type_text(text)
 
             def hide_after_done():
