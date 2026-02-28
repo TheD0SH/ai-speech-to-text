@@ -33,10 +33,34 @@ print("Ready!")
 
 # Config
 CONFIG_FILE = Path.home() / ".voice-type-config.json"
+MACROS_FILE = Path.home() / ".voice-type-macros.json"
+STATS_FILE = Path.home() / ".voice-type-stats.json"
 SAMPLE_RATE = 16000
 
 # Default filter words - common filler words the model outputs when nothing is said
 DEFAULT_FILTER_WORDS = ["thank you", "thanks", "thank you.", "thanks."]
+
+# Default macros
+DEFAULT_MACROS = {
+    "signature": "Best regards,",
+    "cheers": "Cheers,",
+    "thanks ahead": "Thanks in advance!",
+    "let me check": "Let me check on that and get back to you.",
+    "sounds good": "Sounds good, let me know if you need anything else!",
+    "will do": "Will do!",
+    "today date": "{{DATE}}",
+    "now time": "{{TIME}}",
+}
+
+# Statistics tracking
+DEFAULT_STATS = {
+    "total_words": 0,
+    "total_sessions": 0,
+    "total_transcriptions": 0,
+    "total_minutes": 0.0,
+    "first_used": None,
+    "last_used": None,
+}
 
 # Load config
 config_data = {
@@ -64,6 +88,25 @@ ACCOUNTING_MODE = config_data.get("accounting_mode", False)
 ACCOUNTING_COMMA = config_data.get("accounting_comma", False)
 CASUAL_MODE = config_data.get("casual_mode", False)
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
+
+# Load macros
+MACROS = DEFAULT_MACROS.copy()
+if MACROS_FILE.exists():
+    try:
+        user_macros = json.loads(MACROS_FILE.read_text())
+        MACROS.update(user_macros)
+        print(f"[startup] Loaded {len(user_macros)} custom macros")
+    except:
+        pass
+
+# Load statistics
+STATS = DEFAULT_STATS.copy()
+if STATS_FILE.exists():
+    try:
+        saved_stats = json.loads(STATS_FILE.read_text())
+        STATS.update(saved_stats)
+    except:
+        pass
 
 # Debug: Show config on startup
 print(f"[startup] Config file: {CONFIG_FILE}")
@@ -427,6 +470,61 @@ class FloatingWidget:
         filter_entry.insert(0, ", ".join(FILTER_WORDS) if FILTER_WORDS else "")
         
         tk.Label(content, text="Example: thank you, thanks", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
+
+        # Statistics Section
+        tk.Label(content, text="📊 Statistics", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        
+        stats_frame = tk.Frame(content, bg=self.bg_light, padx=10, pady=10)
+        stats_frame.pack(fill=tk.X, pady=(5, 15))
+        
+        stats_labels = [
+            f"📝 Words typed: {STATS.get('total_words', 0):,}",
+            f"🎤 Transcriptions: {STATS.get('total_transcriptions', 0):,}",
+            f"📅 First used: {STATS.get('first_used', 'Never') or 'Never'}",
+            f"🕒 Last used: {STATS.get('last_used', 'Never') or 'Never'}",
+        ]
+        
+        for stat_text in stats_labels:
+            tk.Label(stats_frame, text=stat_text, bg=self.bg_light, fg=self.text_primary,
+                    font=("Segoe UI", 10)).pack(anchor="w")
+        
+        def reset_stats():
+            global STATS
+            STATS = DEFAULT_STATS.copy()
+            STATS_FILE.write_text(json.dumps(STATS, indent=2))
+            stats_updated_label.config(text="✓ Stats reset!")
+            win.after(1500, lambda: stats_updated_label.config(text=""))
+        
+        stats_btn_frame = tk.Frame(stats_frame, bg=self.bg_light)
+        stats_btn_frame.pack(anchor="w", pady=(10, 0))
+        
+        stats_updated_label = tk.Label(stats_btn_frame, text="", bg=self.bg_light, 
+                                       fg=self.accent_success, font=("Segoe UI", 9))
+        stats_updated_label.pack(side=tk.LEFT)
+        
+        tk.Button(stats_btn_frame, text="Reset Stats", bg=self.bg_medium, fg=self.text_primary,
+                 command=reset_stats, font=("Segoe UI", 9), relief="flat", cursor="hand2").pack(side=tk.LEFT, padx=(0, 5))
+
+        # Macros Section (collapsible)
+        tk.Label(content, text="🔧 Voice Macros", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="Voice commands that expand to full text:", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w")
+        
+        # Show a few example macros
+        macros_text = tk.Text(content, height=4, width=50, bg=self.bg_light, fg=self.text_primary,
+                             font=("Segoe UI", 9), relief="flat", wrap=tk.WORD)
+        macros_text.pack(fill=tk.X, pady=(5, 5))
+        
+        example_macros = list(MACROS.items())[:5]
+        macros_display = "\n".join([f'"{k}" → "{v[:30]}..."' if len(v) > 30 else f'"{k}" → "{v}"' 
+                                   for k, v in example_macros])
+        macros_text.insert("1.0", macros_display)
+        macros_text.config(state="disabled")
+        
+        tk.Label(content, text=f"💡 {len(MACROS)} macros loaded. Edit ~/.voice-type-macros.json to customize.", 
                 bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
 
         # Buttons
@@ -960,16 +1058,73 @@ def type_text(text):
         print("[filtered] Text was filtered out, nothing to type")
         return
     
+    # Apply voice macros (expand text shortcuts)
+    text = apply_macros(text)
+    
     # Convert emoji phrases to actual emojis
     text = convert_emojis(text)
     
     # Apply casual mode (lowercase, informal punctuation)
     text = apply_casual_mode(text)
     
+    # Update statistics
+    update_stats(text)
+    
     print(f"[typing] {text}")
     pyperclip.copy(text)
     time.sleep(0.05)
     keyboard.press_and_release("ctrl+v")
+
+
+def apply_macros(text):
+    """Apply voice macros to expand shortcuts."""
+    global MACROS
+    
+    if not MACROS:
+        return text
+    
+    result = text
+    today = time.strftime("%Y-%m-%d")
+    now = time.strftime("%H:%M:%S")
+    datetime = time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Sort by length (longest first) to avoid partial matches
+    sorted_macros = sorted(MACROS.items(), key=lambda x: len(x[0]), reverse=True)
+    
+    for phrase, expansion in sorted_macros:
+        # Case-insensitive replacement
+        pattern = re.compile(re.escape(phrase), re.IGNORECASE)
+        
+        # Replace dynamic placeholders
+        expansion = expansion.replace("{{DATE}}", today)
+        expansion = expansion.replace("{{TIME}}", now)
+        expansion = expansion.replace("{{DATETIME}}", datetime)
+        
+        result = pattern.sub(expansion, result)
+    
+    # Clean up any double spaces
+    result = re.sub(r'\s+', ' ', result).strip()
+    
+    return result
+
+
+def update_stats(text):
+    """Update usage statistics."""
+    global STATS
+    
+    word_count = len(text.split())
+    STATS["total_words"] += word_count
+    STATS["total_transcriptions"] += 1
+    STATS["last_used"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    if STATS["first_used"] is None:
+        STATS["first_used"] = STATS["last_used"]
+    
+    # Save stats to file
+    try:
+        STATS_FILE.write_text(json.dumps(STATS, indent=2))
+    except:
+        pass
 
 
 def record_and_transcribe():
@@ -1090,17 +1245,27 @@ def hotkey_loop():
 
 
 def main():
-    global widget, tray_icon
+    global widget, tray_icon, STATS
 
     print("=" * 50)
     print(f"Voice Type - Groq Whisper (Hold {HOTKEY.upper()})")
     print("=" * 50)
+
+    # Increment session count
+    STATS["total_sessions"] += 1
+    try:
+        STATS_FILE.write_text(json.dumps(STATS, indent=2))
+    except:
+        pass
 
     if not API_KEY:
         print("\n  No API key found!")
         print("Get free key: https://console.groq.com/keys")
     else:
         print(f"API key loaded ({len(API_KEY)} chars)")
+    
+    if MACROS:
+        print(f"Macros loaded: {len(MACROS)}")
 
     widget = FloatingWidget()
 
