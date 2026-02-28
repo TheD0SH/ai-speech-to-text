@@ -1504,6 +1504,87 @@ def record_and_transcribe():
         state.recording = False
 
 
+# Keyboard shortcuts overlay
+SHORTCUTS_OVERLAY_VISIBLE = False
+
+def show_shortcuts_overlay():
+    """Show a popup with all keyboard shortcuts."""
+    global SHORTCUTS_OVERLAY_VISIBLE
+    
+    if SHORTCUTS_OVERLAY_VISIBLE:
+        return
+    
+    SHORTCUTS_OVERLAY_VISIBLE = True
+    
+    overlay = tk.Tk()
+    overlay.title("VoiceType - Keyboard Shortcuts")
+    overlay.configure(bg="#1a1a2e")
+    overlay.resizable(False, False)
+    overlay.attributes("-topmost", True)
+    
+    # Center on screen
+    overlay.update_idletasks()
+    width = 400
+    height = 450
+    x = (overlay.winfo_screenwidth() // 2) - (width // 2)
+    y = (overlay.winfo_screenheight() // 2) - (height // 2)
+    overlay.geometry(f"{width}x{height}+{x}+{y}")
+    
+    # Title
+    tk.Label(overlay, text="⌨️ Keyboard Shortcuts", font=("Segoe UI", 16, "bold"),
+            bg="#1a1a2e", fg="#4a9eff").pack(pady=20)
+    
+    shortcuts = [
+        ("Recording", f"Hold {HOTKEY.upper()}", "Push-to-talk"),
+        ("", "", ""),
+        ("Voice Commands", "", ""),
+        ("Delete last word", "\"delete last word\"", "or \"undo that\""),
+        ("Delete sentence", "\"delete last sentence\"", ""),
+        ("New paragraph", "\"new paragraph\"", "or \"new line\""),
+        ("Punctuation", "\"period\", \"comma\"", "\"question mark\""),
+        ("", "", ""),
+        ("In-App", "", ""),
+        ("Show shortcuts", "F1", "This overlay"),
+        ("Settings", "Right-click tray", "Open settings"),
+        ("Quit", "Right-click tray → Quit", ""),
+        ("", "", ""),
+        ("Press ESC or click to close", "", ""),
+    ]
+    
+    frame = tk.Frame(overlay, bg="#1a1a2e")
+    frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+    
+    for action, shortcut, note in shortcuts:
+        row = tk.Frame(frame, bg="#1a1a2e")
+        row.pack(fill=tk.X, pady=2)
+        
+        if action and not action.startswith("Press"):
+            tk.Label(row, text=action, font=("Segoe UI", 10, "bold"),
+                    bg="#1a1a2e", fg="#ffffff", width=20, anchor="w").pack(side=tk.LEFT)
+            tk.Label(row, text=shortcut, font=("Segoe UI", 10),
+                    bg="#1a1a2e", fg="#00ff88", width=25, anchor="w").pack(side=tk.LEFT)
+            tk.Label(row, text=note, font=("Segoe UI", 9),
+                    bg="#1a1a2e", fg="#a0a0a0", anchor="w").pack(side=tk.LEFT)
+        elif action.startswith("Press"):
+            tk.Label(row, text=action, font=("Segoe UI", 10, "italic"),
+                    bg="#1a1a2e", fg="#a0a0a0").pack(side=tk.LEFT)
+        else:
+            # Section header
+            tk.Label(row, text=shortcut, font=("Segoe UI", 11, "bold"),
+                    bg="#1a1a2e", fg="#533483").pack(side=tk.LEFT)
+    
+    def close_overlay(e=None):
+        global SHORTCUTS_OVERLAY_VISIBLE
+        SHORTCUTS_OVERLAY_VISIBLE = False
+        overlay.destroy()
+    
+    overlay.bind("<Escape>", close_overlay)
+    overlay.bind("<Button-1>", close_overlay)
+    overlay.protocol("WM_DELETE_WINDOW", close_overlay)
+    
+    overlay.mainloop()
+
+
 def hotkey_loop():
     """Poll for hotkey state."""
     was_pressed = False
@@ -1515,6 +1596,13 @@ def hotkey_loop():
             threading.Thread(target=record_and_transcribe, daemon=True).start()
         elif not is_pressed and was_pressed:
             was_pressed = False
+        
+        # Check for F1 to show shortcuts overlay
+        if keyboard.is_pressed("f1") and not SHORTCUTS_OVERLAY_VISIBLE:
+            keyboard.release("f1")
+            time.sleep(0.1)
+            show_shortcuts_overlay()
+        
         time.sleep(0.02)
 
 
