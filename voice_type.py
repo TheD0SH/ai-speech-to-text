@@ -3,7 +3,7 @@ Voice Type - Hold Shift to speak, release to type.
 Uses Groq Whisper API for fast, accurate speech-to-text.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __author__ = "Anton AI Agent"
 
 import sys
@@ -82,6 +82,11 @@ config_data = {
     "silence_threshold": 2.0,  # Seconds of silence before auto-stop
     "always_on_top": True,  # Widget always on top
     "autohide": True,  # Auto-hide widget after transcription
+    "compact_mode": False,  # Smaller widget
+    "accent_color": "#6366f1",  # Custom accent color
+    "save_audio": False,  # Save audio recordings
+    # Custom vocabulary - words to prioritize in transcription
+    "custom_vocabulary": [],
     # Granular punctuation controls
     "punctuation": {
         "periods": True,
@@ -122,6 +127,10 @@ AUTO_STOP = config_data.get("auto_stop", False)  # Auto-stop recording after sil
 SILENCE_THRESHOLD = config_data.get("silence_threshold", 2.0)  # Seconds of silence before auto-stop
 ALWAYS_ON_TOP = config_data.get("always_on_top", True)  # Widget always on top
 AUTOHIDE_ENABLED = config_data.get("autohide", True)  # Auto-hide widget after transcription
+COMPACT_MODE = config_data.get("compact_mode", False)  # Smaller widget
+ACCENT_COLOR = config_data.get("accent_color", "#6366f1")  # Custom accent color
+SAVE_AUDIO = config_data.get("save_audio", False)  # Save audio recordings
+CUSTOM_VOCABULARY = config_data.get("custom_vocabulary", [])  # Custom words for transcription
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
 
 # Granular punctuation settings
@@ -235,38 +244,45 @@ class FloatingWidget:
         self.apply_theme(THEME)
     
     def apply_theme(self, theme_name):
-        """Apply color theme (dark or light)."""
+        """Apply color theme (dark or light) with custom accent color."""
+        # Parse custom accent color or use default
+        accent = ACCENT_COLOR if ACCENT_COLOR else "#6366f1"
+        
         if theme_name == "light":
             # Light theme colors
             self.bg_dark = "#f5f5f5"
             self.bg_medium = "#ffffff"
             self.bg_light = "#e8e8e8"
-            self.accent_primary = "#0066cc"
+            self.accent_primary = accent
             self.accent_secondary = "#6b5b95"
             self.accent_success = "#28a745"
             self.accent_warning = "#ffc107"
             self.text_primary = "#1a1a1a"
             self.text_secondary = "#666666"
-            self.border_color = "#0066cc"
+            self.border_color = accent
         else:
             # Dark theme colors (default)
             self.bg_dark = "#1a1a2e"
             self.bg_medium = "#16213e"
             self.bg_light = "#0f3460"
-            self.accent_primary = "#4a9eff"
+            self.accent_primary = accent
             self.accent_secondary = "#533483"
             self.accent_success = "#00ff88"
             self.accent_warning = "#ffc107"
             self.text_primary = "#ffffff"
             self.text_secondary = "#a0a0a0"
-            self.border_color = "#4a9eff"
+            self.border_color = accent
 
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         
-        # Widget dimensions
-        widget_width = 320
-        widget_height = 130  # Increased for word count
+        # Widget dimensions - compact or normal
+        if COMPACT_MODE:
+            widget_width = 200
+            widget_height = 60
+        else:
+            widget_width = 320
+            widget_height = 130  # Increased for word count
         
         # Center horizontally, near bottom
         x = (screen_width - widget_width) // 2
@@ -826,14 +842,95 @@ class FloatingWidget:
             font=("Segoe UI", 10),
             cursor="hand2"
         )
-        autohide_check.pack(anchor="w", pady=(0, 15))
+        autohide_check.pack(anchor="w", pady=(0, 5))
+
+        # Compact mode toggle
+        compact_var = tk.BooleanVar(value=COMPACT_MODE)
+        compact_check = tk.Checkbutton(
+            content,
+            text="📱 Compact mode (smaller widget)",
+            variable=compact_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        compact_check.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Smaller widget for minimal screen space", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
+
+        # Accent color selection
+        tk.Label(content, text="🎨 Accent Color", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        
+        color_frame = tk.Frame(content, bg=self.bg_dark)
+        color_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        color_var = tk.StringVar(value=ACCENT_COLOR)
+        color_options = [
+            ("💜 Purple", "#6366f1"),
+            ("💙 Blue", "#3b82f6"),
+            ("💚 Green", "#22c55e"),
+            ("❤️ Red", "#ef4444"),
+            ("🧡 Orange", "#f97316"),
+            ("💗 Pink", "#ec4899"),
+        ]
+        
+        color_combo = ttk.Combobox(color_frame, textvariable=color_var,
+                                   values=[c[1] for c in color_options],
+                                   state="readonly", width=10)
+        color_combo.pack(side=tk.LEFT)
+        
+        # Color preview
+        color_preview = tk.Label(color_frame, text="  Preview  ", bg=ACCENT_COLOR,
+                                fg="white", font=("Segoe UI", 9))
+        color_preview.pack(side=tk.LEFT, padx=10)
+        
+        def update_color_preview(*args):
+            color_preview.configure(bg=color_var.get())
+        color_var.trace("w", update_color_preview)
+
+        # Custom Vocabulary section
+        tk.Label(content, text="📖 Custom Vocabulary", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Words to prioritize in transcription (comma-separated)", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+        
+        vocab_entry = tk.Entry(content, bg=self.bg_light, fg=self.text_primary,
+                              insertbackground=self.text_primary,
+                              font=("Segoe UI", 10), width=50)
+        vocab_entry.insert(0, ", ".join(CUSTOM_VOCABULARY))
+        vocab_entry.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Example: API, Kubernetes, PostgreSQL, WebSocket", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
+
+        # Save audio recordings option
+        save_audio_var = tk.BooleanVar(value=SAVE_AUDIO)
+        save_audio_check = tk.Checkbutton(
+            content,
+            text="💾 Save audio recordings",
+            variable=save_audio_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        save_audio_check.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Saves recordings to ~/VoiceType Recordings/", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
 
         # Buttons
         btn_frame = tk.Frame(content, bg=self.bg_dark)
         btn_frame.pack(pady=20)
 
         def save():
-            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME, QUICKEN_MODE, LANGUAGE, AUTO_STOP, ALWAYS_ON_TOP, AUTOHIDE_ENABLED
+            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME, QUICKEN_MODE, LANGUAGE, AUTO_STOP, ALWAYS_ON_TOP, AUTOHIDE_ENABLED, COMPACT_MODE, ACCENT_COLOR, SAVE_AUDIO
             API_KEY = api_entry.get().strip()
             idx = mic_combo.current()
             if idx >= 0 and mics:
@@ -852,6 +949,16 @@ class FloatingWidget:
             AUTO_STOP = autostop_var.get()
             ALWAYS_ON_TOP = ontop_var.get()
             AUTOHIDE_ENABLED = autohide_var.get()
+            COMPACT_MODE = compact_var.get()
+            ACCENT_COLOR = color_var.get()
+            SAVE_AUDIO = save_audio_var.get()
+            
+            # Parse custom vocabulary
+            vocab_text = vocab_entry.get().strip()
+            if vocab_text:
+                CUSTOM_VOCABULARY = [w.strip() for w in vocab_text.split(",") if w.strip()]
+            else:
+                CUSTOM_VOCABULARY = []
             
             filter_text_val = filter_entry.get().strip()
             if filter_text_val:
@@ -877,6 +984,10 @@ class FloatingWidget:
             config_data["auto_stop"] = AUTO_STOP
             config_data["always_on_top"] = ALWAYS_ON_TOP
             config_data["autohide"] = AUTOHIDE_ENABLED
+            config_data["compact_mode"] = COMPACT_MODE
+            config_data["accent_color"] = ACCENT_COLOR
+            config_data["save_audio"] = SAVE_AUDIO
+            config_data["custom_vocabulary"] = CUSTOM_VOCABULARY
             config_data["filter_words"] = FILTER_WORDS
             CONFIG_FILE.write_text(json.dumps(config_data))
             
@@ -1084,7 +1195,7 @@ def create_tray_icon():
 
 def transcribe_with_groq(audio_path):
     """Use Groq Whisper API for transcription."""
-    global API_KEY
+    global API_KEY, CUSTOM_VOCABULARY
 
     if not API_KEY:
         return None, "No API key"
@@ -1100,6 +1211,11 @@ def transcribe_with_groq(audio_path):
             # Add language parameter if specified (not auto-detect)
             if LANGUAGE and LANGUAGE != "auto":
                 data["language"] = LANGUAGE
+            
+            # Add custom vocabulary as prompt to improve transcription accuracy
+            if CUSTOM_VOCABULARY:
+                vocab_prompt = "Context: " + ", ".join(CUSTOM_VOCABULARY[:50])  # Limit to avoid token limits
+                data["prompt"] = vocab_prompt
 
             with httpx.Client(timeout=30) as client:
                 response = client.post(url, headers=headers, files=files, data=data)
@@ -1817,6 +1933,17 @@ def record_and_transcribe():
 
         # Transcribe
         text, error = transcribe_with_groq(temp_path)
+        
+        # Save audio if enabled
+        if SAVE_AUDIO and text:
+            audio_dir = Path.home() / "VoiceType Recordings"
+            audio_dir.mkdir(exist_ok=True)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            audio_file = audio_dir / f"recording_{timestamp}.wav"
+            import shutil
+            shutil.copy(temp_path, audio_file)
+            print(f"[audio] Saved to {audio_file}")
+        
         Path(temp_path).unlink(missing_ok=True)
 
         if text:
