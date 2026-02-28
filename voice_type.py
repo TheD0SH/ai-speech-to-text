@@ -73,6 +73,7 @@ config_data = {
     "hotkey": "shift",
     "accounting_mode": False,
     "history_enabled": True,
+    "quicken_mode": False,  # Type character-by-character for Quicken compatibility
     # Granular punctuation controls
     "punctuation": {
         "periods": True,
@@ -104,6 +105,7 @@ ACCOUNTING_COMMA = config_data.get("accounting_comma", False)
 CASUAL_MODE = config_data.get("casual_mode", False)
 THEME = config_data.get("theme", "dark")  # "dark" or "light"
 HISTORY_ENABLED = config_data.get("history_enabled", True)
+QUICKEN_MODE = config_data.get("quicken_mode", False)  # Character-by-character typing for Quicken
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
 
 # Granular punctuation settings
@@ -707,12 +709,33 @@ class FloatingWidget:
         tk.Label(theme_frame, text="  Restart app to apply theme change", 
                 bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(side=tk.LEFT)
 
+        # Quicken mode (character-by-character typing for compatibility)
+        tk.Label(content, text="💼 App Compatibility", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        
+        quicken_var = tk.BooleanVar(value=QUICKEN_MODE)
+        quicken_check = tk.Checkbutton(
+            content,
+            text="🧾 Quicken Mode (character-by-character typing)",
+            variable=quicken_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        quicken_check.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Enable if text doesn't paste correctly in Quicken or similar apps", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
+
         # Buttons
         btn_frame = tk.Frame(content, bg=self.bg_dark)
         btn_frame.pack(pady=20)
 
         def save():
-            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME
+            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME, QUICKEN_MODE
             API_KEY = api_entry.get().strip()
             idx = mic_combo.current()
             if idx >= 0 and mics:
@@ -726,6 +749,7 @@ class FloatingWidget:
             ACCOUNTING_COMMA = comma_var.get()
             CASUAL_MODE = casual_var.get()
             THEME = theme_var.get()
+            QUICKEN_MODE = quicken_var.get()
             
             filter_text_val = filter_entry.get().strip()
             if filter_text_val:
@@ -746,6 +770,7 @@ class FloatingWidget:
             config_data["accounting_comma"] = ACCOUNTING_COMMA
             config_data["casual_mode"] = CASUAL_MODE
             config_data["theme"] = THEME
+            config_data["quicken_mode"] = QUICKEN_MODE
             config_data["filter_words"] = FILTER_WORDS
             CONFIG_FILE.write_text(json.dumps(config_data))
 
@@ -1376,9 +1401,21 @@ def type_text(text):
     update_stats(text)
     
     print(f"[typing] {text}")
-    pyperclip.copy(text)
-    time.sleep(0.05)
-    keyboard.press_and_release("ctrl+v")
+    
+    # Check if Quicken mode is enabled
+    if QUICKEN_MODE:
+        # Type character-by-character for Quicken compatibility
+        print("[quicken] Using character-by-character typing")
+        for char in text:
+            keyboard.write(char)
+            time.sleep(0.01)  # Small delay between characters for compatibility
+        # Add space at end
+        keyboard.write(" ")
+    else:
+        # Normal clipboard paste mode (faster)
+        pyperclip.copy(text)
+        time.sleep(0.05)
+        keyboard.press_and_release("ctrl+v")
 
 
 def apply_macros(text):
