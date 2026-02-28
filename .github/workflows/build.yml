@@ -1,0 +1,70 @@
+name: Build VoiceType Executables
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        pip install -r requirements.txt
+
+    - name: Build VoiceType.exe
+      run: pyinstaller --clean VoiceType.spec
+
+    - name: Build VoiceTypeLite.exe
+      run: pyinstaller --clean VoiceTypeLite.spec
+
+    - name: Create ZIP
+      run: |
+        cd dist
+        7z a VoiceType.zip VoiceType.exe
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: VoiceType-Windows
+        path: |
+          dist/VoiceType.exe
+          dist/VoiceTypeLite.exe
+          dist/VoiceType.zip
+
+  release:
+    needs: build-windows
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download Windows artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: VoiceType-Windows
+        path: dist
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          dist/VoiceType.exe
+          dist/VoiceTypeLite.exe
+          dist/VoiceType.zip
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
