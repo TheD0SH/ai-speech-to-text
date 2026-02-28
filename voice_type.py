@@ -78,6 +78,7 @@ config_data = {
     "auto_stop": False,  # Auto-stop recording after silence
     "silence_threshold": 2.0,  # Seconds of silence before auto-stop
     "always_on_top": True,  # Widget always on top
+    "autohide": True,  # Auto-hide widget after transcription
     # Granular punctuation controls
     "punctuation": {
         "periods": True,
@@ -117,6 +118,7 @@ LANGUAGE = config_data.get("language", "auto")  # Auto-detect or specify languag
 AUTO_STOP = config_data.get("auto_stop", False)  # Auto-stop recording after silence
 SILENCE_THRESHOLD = config_data.get("silence_threshold", 2.0)  # Seconds of silence before auto-stop
 ALWAYS_ON_TOP = config_data.get("always_on_top", True)  # Widget always on top
+AUTOHIDE_ENABLED = config_data.get("autohide", True)  # Auto-hide widget after transcription
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
 
 # Granular punctuation settings
@@ -805,14 +807,30 @@ class FloatingWidget:
         )
         ontop_check.pack(anchor="w", pady=(0, 5))
         tk.Label(content, text="   Disable if widget blocks other windows", 
-                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+
+        # Auto-hide toggle
+        autohide_var = tk.BooleanVar(value=AUTOHIDE_ENABLED)
+        autohide_check = tk.Checkbutton(
+            content,
+            text="🙈 Auto-hide widget after transcription",
+            variable=autohide_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        autohide_check.pack(anchor="w", pady=(0, 15))
 
         # Buttons
         btn_frame = tk.Frame(content, bg=self.bg_dark)
         btn_frame.pack(pady=20)
 
         def save():
-            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME, QUICKEN_MODE, LANGUAGE, AUTO_STOP, ALWAYS_ON_TOP
+            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME, QUICKEN_MODE, LANGUAGE, AUTO_STOP, ALWAYS_ON_TOP, AUTOHIDE_ENABLED
             API_KEY = api_entry.get().strip()
             idx = mic_combo.current()
             if idx >= 0 and mics:
@@ -830,6 +848,7 @@ class FloatingWidget:
             LANGUAGE = language_var.get()
             AUTO_STOP = autostop_var.get()
             ALWAYS_ON_TOP = ontop_var.get()
+            AUTOHIDE_ENABLED = autohide_var.get()
             
             filter_text_val = filter_entry.get().strip()
             if filter_text_val:
@@ -854,6 +873,7 @@ class FloatingWidget:
             config_data["language"] = LANGUAGE
             config_data["auto_stop"] = AUTO_STOP
             config_data["always_on_top"] = ALWAYS_ON_TOP
+            config_data["autohide"] = AUTOHIDE_ENABLED
             config_data["filter_words"] = FILTER_WORDS
             CONFIG_FILE.write_text(json.dumps(config_data))
             
@@ -1723,7 +1743,7 @@ def record_and_transcribe():
 
             def hide_after_done():
                 time.sleep(2)
-                if widget:
+                if widget and AUTOHIDE_ENABLED:
                     widget.root.after(0, widget.hide_widget)
 
             threading.Thread(target=hide_after_done, daemon=True).start()
