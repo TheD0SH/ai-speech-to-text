@@ -100,6 +100,7 @@ API_KEY = config_data.get("api_key", "")
 MIC_INDEX = config_data.get("mic_index")
 HOTKEY = config_data.get("hotkey", "shift")
 ACCOUNTING_MODE = config_data.get("accounting_mode", False)
+SMART_QUOTES = config_data.get("smart_quotes", False)
 ACCOUNTING_COMMA = config_data.get("accounting_comma", False)
 CASUAL_MODE = config_data.get("casual_mode", False)
 THEME = config_data.get("theme", "dark")  # "dark" or "light"
@@ -1475,6 +1476,23 @@ def record_and_transcribe():
 
         if text:
             text = text.strip()
+            
+            # Apply smart quotes if enabled
+            if SMART_QUOTES:
+                # Replace straight quotes with curly quotes
+                result = []
+                in_quote = False
+                for char in text:
+                    if char == '"':
+                        if in_quote:
+                            result.append('"')  # Closing quote
+                        else:
+                            result.append('"')  # Opening quote
+                        in_quote = not in_quote
+                    else:
+                        result.append(char)
+                text = ''.join(result)
+            
             print(f"[whisper] {text}")
             update_status("done", text)
             type_text(text)
