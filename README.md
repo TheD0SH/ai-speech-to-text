@@ -1,198 +1,182 @@
-# AI Speech to Text for AI Agency
+# 🎙️ AI Speech to Text
 
-Hold **SHIFT** to speak, release to type. Fast, accurate voice-to-text using Groq Whisper API.
+<div align="center">
 
-## Features
+**Hold SHIFT to speak, release to type.** Fast, accurate voice-to-text using Groq Whisper API.
 
-- Hold SHIFT to record - Release to transcribe and type
-- Fast transcription - Groq Whisper API (~0.5s)
-- High accuracy - Whisper large-v3-turbo model
-- System tray icon - Right-click for settings
-- Auto-hide widget - Only shows when recording
-- Easy settings - Mic picker, API key input in UI
-- Privacy focused - Audio processed by Groq, not stored
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Groq](https://img.shields.io/badge/Powered%20by-Groq-orange)](https://groq.com/)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS-lightgrey)](https://github.com/TheD0SH/ai-speech-to-text/releases)
 
-### New in v1.2.0
+</div>
 
-- **Accounting Mode** - Converts spoken numbers to digits (e.g., "one hundred twenty three" → "123")
-- **Comma Formatting** - Optional commas in large numbers (e.g., "1,234,567")
-- **Casual Mode** - Lowercase output with informal punctuation
-- **Filter Words** - Block unwanted phrases (e.g., "thank you" when nothing said)
-- **Blue Theme** - Modern dark blue UI
-- **Custom Hotkeys** - Change push-to-talk key in settings
-- **Emoji Voice Commands** - Say "happy emoji" to insert 😊 (100+ emojis supported)
+---
 
-## Two Versions Available
+## ✨ Features
 
-| Version | File | Description |
-|---------|------|-------------|
-| **Full** | `VoiceType.exe` | All features, system tray, emoji support |
-| **Lite** | `VoiceTypeLite.exe` | Optimized for older/slower computers |
+| Feature | Description |
+|---------|-------------|
+| 🎤 **Push-to-Talk** | Hold SHIFT to record, release to transcribe |
+| ⚡ **Fast** | ~0.5s transcription using Groq Whisper API |
+| 🎯 **Accurate** | Uses Whisper large-v3-turbo model |
+| 🔢 **Accounting Mode** | Converts "one hundred" → "100" |
+| 💬 **Casual Mode** | Lowercase output with informal punctuation |
+| 😀 **Emoji Support** | Say "happy emoji" → 😊 (100+ emojis) |
+| 🎹 **Custom Hotkeys** | Change push-to-talk key in settings |
+| 🚫 **Filter Words** | Block unwanted phrases |
 
-### Lite Version Differences
-- Uses `distil-whisper-large-v3-en` model (faster)
-- No system tray icon (less memory)
+## 📥 Installation
+
+### Windows (Recommended)
+1. Download `VoiceType.exe` from the `dist` folder
+2. Double-click to run - no installation needed!
+
+### macOS
+1. Download `VoiceType.pkg`
+2. Double-click and follow the installer
+3. Find VoiceType in your Applications folder
+
+### From Source
+```bash
+# Clone the repo
+git clone https://github.com/TheD0SH/ai-speech-to-text.git
+cd ai-speech-to-text
+
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run
+python voice_type.py
+```
+
+### Using .env (Optional)
+```bash
+# Copy example file
+cp example.env .env
+
+# Edit .env and add your API key
+GROQ_API_KEY=your_key_here
+```
+
+## ⚙️ Setup
+
+1. Get a **free** API key from [Groq Console](https://console.groq.com/keys)
+2. Right-click tray icon → **Settings** (opens automatically on first run)
+3. Paste your API key
+4. Select your microphone
+5. Configure features
+6. Click **Save**
+
+## 🚀 Usage
+
+1. Place your cursor where you want text
+2. **Hold SHIFT** and speak (widget appears)
+3. **Release SHIFT** to transcribe
+4. Text appears at your cursor!
+5. Widget auto-hides after 2 seconds
+
+## 🔢 Features in Detail
+
+### Accounting Mode
+Converts spoken number words to digits:
+| You Say | You Get |
+|---------|---------|
+| "one" | "1" |
+| "twenty five" | "25" |
+| "one hundred" | "100" |
+| "one million" | "1,000,000" (with comma option) |
+
+### Casual Mode
+Outputs lowercase text with informal punctuation:
+- No capitalization
+- Periods removed
+- Multiple punctuation reduced (`!!!` → `!`)
+
+### Emoji Support
+Speak emoji names to insert actual emojis:
+
+| Say This | Get This |
+|----------|----------|
+| "happy emoji" | 😊 |
+| "fire emoji" | 🔥 |
+| "thumbs up emoji" | 👍 |
+| "rocket emoji" | 🚀 |
+
+**100+ emojis supported!**
+
+## 📋 Two Versions
+
+| Version | File | Best For |
+|---------|------|----------|
+| **Full** | `VoiceType.exe` | Most users - all features |
+| **Lite** | `VoiceTypeLite.exe` | Older/slower computers |
+
+**Lite Version:**
+- Uses faster model (distil-whisper-large-v3-en)
+- No system tray (less memory)
 - No emoji conversion
 - Simpler UI
-- Smaller audio chunks
-- Shares settings with Full version
 
-## Installation
-
-### Option 1: Pre-built Executables
-
-**Windows:**
-- Download `VoiceType.exe` (or `VoiceTypeLite.exe` for older computers) from the `dist` folder
-- Double-click to run (no installation needed)
-
-**macOS:**
-- Download `VoiceType.pkg`
-- Double-click it
-- Click "Continue" then "Install"
-- Done! VoiceType is in your Applications folder
-
-### Option 2: Run from Source
-
-1. **Clone the repo**
-   ```bash
-   git clone https://github.com/yourusername/ai-speech-to-text.git
-   cd ai-speech-to-text
-   ```
-
-2. **Create virtual environment**
-   ```bash
-   python -m venv venv
-   ```
-
-3. **Activate venv**
-   - Windows: `venv\Scripts\activate`
-   - Mac/Linux: `source venv/bin/activate`
-
-4. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-5. **Run**
-   ```bash
-   python voice_type.py
-   ```
-   
-   Or on Windows, just double-click `run.bat`
-
-## Building from Source
+## 🛠️ Building from Source
 
 ### Windows
 ```bash
 pip install pyinstaller
 pyinstaller VoiceType.spec --noconfirm
 ```
-The executable will be created at `dist/VoiceType.exe`
 
 ### macOS
 ```bash
 chmod +x build-mac.sh
 ./build-mac.sh
 ```
-This creates:
-- `dist/VoiceType.app` - The application bundle
-- `dist/VoiceType.pkg` - PKG installer (share this file)
 
-**Note:** You must build on the target platform. Windows builds only work on Windows, Mac builds only work on Mac.
+## ❓ Troubleshooting
 
-## Setup
+| Problem | Solution |
+|---------|----------|
+| "No API key" error | Get free key from [console.groq.com](https://console.groq.com/keys) |
+| Microphone not detected | Check system permissions, restart app |
+| Transcription is empty | Speak louder, check mic in settings |
+| "Rate limited" error | Wait a moment, will auto-retry |
+| Network errors | Check internet connection |
 
-1. Get a free API key from [Groq Console](https://console.groq.com/keys)
-2. Right-click tray icon → Settings (or settings open automatically on first run)
-3. Paste your API key
-4. Select your microphone
-5. Configure features (Accounting Mode, Casual Mode, Filter Words)
-6. Click Save
+## 📜 Version History
 
-## Usage
+| Version | Changes |
+|---------|---------|
+| **v1.2.0** | Accounting mode, casual mode, filter words, blue theme, Lite version |
+| **v1.1.0** | Emoji support, custom hotkeys |
+| **v1.0.0** | Initial release |
 
-1. Place cursor where you want text
-2. **Hold SHIFT** and speak (widget appears)
-3. **Release SHIFT** to transcribe
-4. Text appears at cursor position
-5. Widget auto-hides after 2 seconds
+## 🔒 Security
 
-## Features in Detail
+- API keys stored locally in `~/.voice-type-config.json`
+- Audio processed in real-time, not saved to disk
+- No data sent anywhere except Groq API
 
-### Accounting Mode
-When enabled, converts spoken number words to digits:
-- "one" → "1"
-- "twenty five" → "25"
-- "one hundred" → "100"
-
-### Comma Formatting
-When enabled with Accounting Mode, adds commas to large numbers:
-- "1000000" → "1,000,000"
-
-### Casual Mode
-When enabled, outputs lowercase text with informal punctuation:
-- No capitalization
-- Periods removed
-- Multiple punctuation reduced
-
-### Filter Words
-Block unwanted phrases from being typed. Useful for blocking:
-- "thank you" (common hallucination when nothing said)
-- "thanks"
-- Any custom words
-
-Enter as comma-separated list in settings.
-
-## Tips
-
-- Speak clearly for best results
-- Works in any app (IDEs, browsers, editors)
-- Right-click tray icon for settings anytime (Full version only)
-- Say "emoji" after an emoji name to insert it (Full version only)
-
-## Emoji Support (Full Version Only)
-
-Speak emoji names to insert actual emojis! Just say the emoji name followed by "emoji":
-
-| Say This | Get This |
-|----------|----------|
-| "happy emoji" | 😊 |
-| "sad emoji" | 😢 |
-| "angry emoji" | 😠 |
-| "laughing emoji" | 😂 |
-| "heart emoji" | ❤️ |
-| "fire emoji" | 🔥 |
-| "thumbs up emoji" | 👍 |
-| "thinking emoji" | 🤔 |
-| "party emoji" | 🎉 |
-| "rocket emoji" | 🚀 |
-
-**Examples:**
-- "That's awesome fire emoji" → "That's awesome 🔥"
-- "Great job thumbs up emoji" → "Great job 👍"
-- "I'm confused thinking emoji" → "I'm confused 🤔"
-
-Over 100+ emojis supported including emotions, animals, food, gestures, and more!
-
-## Requirements
+## 📄 Requirements
 
 - Python 3.8+
 - Microphone
 - Internet connection
 - Groq API key (free tier available)
 
-## Security
+## 📝 License
 
-- API keys are stored locally in `~/.voice-type-config.json`
-- No data is sent anywhere except Groq API for transcription
-- Audio is processed in real-time and not saved to disk permanently
+MIT License - use freely!
 
-## Version History
+---
 
-- **v1.2.0** - Accounting mode, casual mode, filter words, blue theme, Lite version
-- **v1.1.0** - Emoji support, custom hotkeys
-- **v1.0.0** - Initial release
+<div align="center">
 
-## License
+Made with ❤️ for productivity
 
-MIT
+**[Get Started](https://github.com/TheD0SH/ai-speech-to-text/releases)** | **[Report Bug](https://github.com/TheD0SH/ai-speech-to-text/issues)** | **[Request Feature](https://github.com/TheD0SH/ai-speech-to-text/issues)**
+
+</div>
