@@ -3,7 +3,7 @@ Voice Type - Hold Shift to speak, release to type.
 Uses Groq Whisper API for fast, accurate speech-to-text.
 """
 
-__version__ = "2.1.0"
+__version__ = "2.2.0"
 __author__ = "Anton AI Agent"
 
 import sys
@@ -85,8 +85,14 @@ config_data = {
     "compact_mode": False,  # Smaller widget
     "accent_color": "#6366f1",  # Custom accent color
     "save_audio": False,  # Save audio recordings
+    "auto_copy": True,  # Auto-copy transcription to clipboard
+    "show_timer": True,  # Show recording timer
+    "minimize_startup": False,  # Start minimized to tray
+    "widget_position": None,  # Remember widget position [x, y]
     # Custom vocabulary - words to prioritize in transcription
     "custom_vocabulary": [],
+    # Word replacements - auto-replace words
+    "word_replacements": {},
     # Granular punctuation controls
     "punctuation": {
         "periods": True,
@@ -130,7 +136,12 @@ AUTOHIDE_ENABLED = config_data.get("autohide", True)  # Auto-hide widget after t
 COMPACT_MODE = config_data.get("compact_mode", False)  # Smaller widget
 ACCENT_COLOR = config_data.get("accent_color", "#6366f1")  # Custom accent color
 SAVE_AUDIO = config_data.get("save_audio", False)  # Save audio recordings
+AUTO_COPY = config_data.get("auto_copy", True)  # Auto-copy transcription to clipboard
+SHOW_TIMER = config_data.get("show_timer", True)  # Show recording timer
+MINIMIZE_STARTUP = config_data.get("minimize_startup", False)  # Start minimized to tray
+WIDGET_POSITION = config_data.get("widget_position", None)  # Remember widget position
 CUSTOM_VOCABULARY = config_data.get("custom_vocabulary", [])  # Custom words for transcription
+WORD_REPLACEMENTS = config_data.get("word_replacements", {})  # Auto-replace words
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
 
 # Granular punctuation settings
@@ -284,10 +295,23 @@ class FloatingWidget:
             widget_width = 320
             widget_height = 130  # Increased for word count
         
-        # Center horizontally, near bottom
-        x = (screen_width - widget_width) // 2
-        y = screen_height - widget_height - 100
+        # Use saved position or center horizontally near bottom
+        if WIDGET_POSITION and len(WIDGET_POSITION) == 2:
+            x, y = WIDGET_POSITION
+            # Make sure position is still on screen
+            if x < 0 or x > screen_width - widget_width:
+                x = (screen_width - widget_width) // 2
+            if y < 0 or y > screen_height - widget_height:
+                y = screen_height - widget_height - 100
+        else:
+            x = (screen_width - widget_width) // 2
+            y = screen_height - widget_height - 100
+        
         self.root.geometry(f"{widget_width}x{widget_height}+{x}+{y}")
+        
+        # Track current position for saving
+        self.current_x = x
+        self.current_y = y
 
         self.root.configure(bg=self.bg_dark)
 
@@ -328,6 +352,16 @@ class FloatingWidget:
             bg=self.bg_medium,
         )
         self.rec_indicator.pack(side=tk.RIGHT)
+        
+        # Timer label for recording duration
+        self.timer_label = tk.Label(
+            self.status_frame,
+            text="",
+            font=("Segoe UI", 10),
+            fg=self.text_secondary,
+            bg=self.bg_medium,
+        )
+        self.timer_label.pack(side=tk.RIGHT, padx=(0, 10))
 
         # Separator line
         self.separator = tk.Frame(self.content_frame, height=1, bg=self.border_color)
@@ -395,10 +429,57 @@ class FloatingWidget:
         self.status_label.bind("<B1-Motion>", self.drag)
         self.text_label.bind("<Button-1>", self.start_drag)
         self.text_label.bind("<B1-Motion>", self.drag)
+        
+        # Right-click context menu
+        self.context_menu = tk.Menu(self.root, tearoff=0, bg=self.bg_dark, fg=self.text_primary,
+                                   activebackground=self.accent_primary, activeforeground="white")
+        self.context_menu.add_command(label="📋 Copy Last", command=self.copy_last)
+        self.context_menu.add_command(label="📜 History", command=self.open_history)
+        self.context_menu.add_command(label="📁 Transcribe File...", command=lambda: None)  # Placeholder
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="⚙️ Settings", command=self.open_settings)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="📌 Always on Top", command=self.toggle_topmost)
+        self.context_menu.add_command(label="👁️ Show/Hide", command=self.toggle_visibility)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="❌ Minimize", command=self.hide_widget)
+        
+        # Bind right-click
+        self.content_frame.bind("<Button-3>", self.show_context_menu)
+        self.status_label.bind("<Button-3>", self.show_context_menu)
+        self.text_label.bind("<Button-3>", self.show_context_menu)
 
         # Start hidden
         self.hidden = True
         self.root.withdraw()
+
+    def show_context_menu(self, event):
+        """Show right-click context menu."""
+        try:
+            self.context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.context_menu.grab_release()
+
+    def copy_last(self):
+        """Copy last transcription."""
+        global last_transcription
+        if last_transcription:
+            pyperclip.copy(last_transcription)
+
+    def toggle_topmost(self):
+        """Toggle always on top."""
+        global ALWAYS_ON_TOP
+        ALWAYS_ON_TOP = not ALWAYS_ON_TOP
+        self.root.attributes("-topmost", ALWAYS_ON_TOP)
+        config_data["always_on_top"] = ALWAYS_ON_TOP
+        CONFIG_FILE.write_text(json.dumps(config_data))
+
+    def toggle_visibility(self):
+        """Toggle widget visibility."""
+        if self.hidden:
+            self.show_widget()
+        else:
+            self.hide_widget()
 
     def start_drag(self, event):
         self.drag_start_x = event.x
@@ -408,6 +489,14 @@ class FloatingWidget:
         x = self.root.winfo_x() + event.x - self.drag_start_x
         y = self.root.winfo_y() + event.y - self.drag_start_y
         self.root.geometry(f"+{x}+{y}")
+        self.current_x = x
+        self.current_y = y
+        self.save_position()
+
+    def save_position(self):
+        """Save widget position to config."""
+        config_data["widget_position"] = [self.current_x, self.current_y]
+        CONFIG_FILE.write_text(json.dumps(config_data))
 
     def hide_widget(self):
         self.hidden = True
@@ -923,14 +1012,78 @@ class FloatingWidget:
         )
         save_audio_check.pack(anchor="w", pady=(0, 5))
         tk.Label(content, text="   Saves recordings to ~/VoiceType Recordings/", 
-                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+        
+        # Auto-copy toggle
+        auto_copy_var = tk.BooleanVar(value=AUTO_COPY)
+        auto_copy_check = tk.Checkbutton(
+            content,
+            text="📋 Auto-copy to clipboard",
+            variable=auto_copy_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        auto_copy_check.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Automatically copy transcription to clipboard", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+        
+        # Show timer toggle
+        show_timer_var = tk.BooleanVar(value=SHOW_TIMER)
+        show_timer_check = tk.Checkbutton(
+            content,
+            text="⏱️ Show recording timer",
+            variable=show_timer_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        show_timer_check.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Display recording duration while recording", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+        
+        # Minimize on startup toggle
+        minimize_startup_var = tk.BooleanVar(value=MINIMIZE_STARTUP)
+        minimize_startup_check = tk.Checkbutton(
+            content,
+            text="📤 Start minimized to tray",
+            variable=minimize_startup_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        minimize_startup_check.pack(anchor="w", pady=(0, 15))
+
+        # Word Replacements section
+        tk.Label(content, text="🔄 Word Replacements", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Auto-replace words (format: old=new, one per line)", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+        
+        replacements_text = tk.Text(content, height=3, width=50, bg=self.bg_light, fg=self.text_primary,
+                                   insertbackground=self.text_primary, font=("Segoe UI", 9))
+        for old, new in WORD_REPLACEMENTS.items():
+            replacements_text.insert(tk.END, f"{old}={new}\n")
+        replacements_text.pack(anchor="w", pady=(0, 15))
 
         # Buttons
         btn_frame = tk.Frame(content, bg=self.bg_dark)
         btn_frame.pack(pady=20)
 
         def save():
-            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME, QUICKEN_MODE, LANGUAGE, AUTO_STOP, ALWAYS_ON_TOP, AUTOHIDE_ENABLED, COMPACT_MODE, ACCENT_COLOR, SAVE_AUDIO
+            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME, QUICKEN_MODE, LANGUAGE, AUTO_STOP, ALWAYS_ON_TOP, AUTOHIDE_ENABLED, COMPACT_MODE, ACCENT_COLOR, SAVE_AUDIO, AUTO_COPY, SHOW_TIMER, MINIMIZE_STARTUP, WORD_REPLACEMENTS
             API_KEY = api_entry.get().strip()
             idx = mic_combo.current()
             if idx >= 0 and mics:
@@ -952,6 +1105,20 @@ class FloatingWidget:
             COMPACT_MODE = compact_var.get()
             ACCENT_COLOR = color_var.get()
             SAVE_AUDIO = save_audio_var.get()
+            AUTO_COPY = auto_copy_var.get()
+            SHOW_TIMER = show_timer_var.get()
+            MINIMIZE_STARTUP = minimize_startup_var.get()
+            
+            # Parse word replacements
+            replacements_text_val = replacements_text.get("1.0", tk.END).strip()
+            WORD_REPLACEMENTS = {}
+            for line in replacements_text_val.split("\n"):
+                if "=" in line:
+                    parts = line.split("=", 1)
+                    if len(parts) == 2:
+                        old, new = parts[0].strip(), parts[1].strip()
+                        if old and new:
+                            WORD_REPLACEMENTS[old] = new
             
             # Parse custom vocabulary
             vocab_text = vocab_entry.get().strip()
@@ -987,6 +1154,11 @@ class FloatingWidget:
             config_data["compact_mode"] = COMPACT_MODE
             config_data["accent_color"] = ACCENT_COLOR
             config_data["save_audio"] = SAVE_AUDIO
+            config_data["auto_copy"] = AUTO_COPY
+            config_data["show_timer"] = SHOW_TIMER
+            config_data["minimize_startup"] = MINIMIZE_STARTUP
+            config_data["word_replacements"] = WORD_REPLACEMENTS
+            config_data["widget_position"] = [widget.current_x, widget.current_y] if widget else WIDGET_POSITION
             config_data["custom_vocabulary"] = CUSTOM_VOCABULARY
             config_data["filter_words"] = FILTER_WORDS
             CONFIG_FILE.write_text(json.dumps(config_data))
@@ -1181,8 +1353,38 @@ class FloatingWidget:
             self.text_label.configure(text=text, fg="#f8f8f2")
         elif status_key == "recording":
             self.text_label.configure(text="Speak now...", fg="#f8f8f2")
+            # Start timer
+            if SHOW_TIMER:
+                self.start_timer()
         elif status_key == "processing":
             self.text_label.configure(text="Transcribing...", fg="#f8f8f2")
+            self.stop_timer()
+
+    def start_timer(self):
+        """Start recording timer display."""
+        self.recording_start = time.time()
+        self.timer_running = True
+        self.update_timer()
+
+    def stop_timer(self):
+        """Stop recording timer."""
+        self.timer_running = False
+
+    def update_timer(self):
+        """Update timer display every 100ms."""
+        if not self.timer_running:
+            return
+        elapsed = time.time() - self.recording_start
+        mins = int(elapsed // 60)
+        secs = int(elapsed % 60)
+        if mins > 0:
+            timer_text = f"⏱ {mins}:{secs:02d}"
+        else:
+            timer_text = f"⏱ {secs}s"
+        # Update timer label if it exists
+        if hasattr(self, 'timer_label'):
+            self.timer_label.configure(text=timer_text)
+        self.root.after(100, self.update_timer)
 
     def run(self):
         self.root.mainloop()
@@ -2096,10 +2298,19 @@ def record_and_transcribe():
                         result.append(char)
                 text = ''.join(result)
             
+            # Apply word replacements if configured
+            if WORD_REPLACEMENTS:
+                for old_word, new_word in WORD_REPLACEMENTS.items():
+                    text = text.replace(old_word, new_word)
+            
             print(f"[whisper] {text}")
             
             # Store last transcription for copy feature
             last_transcription = text
+            
+            # Auto-copy to clipboard if enabled
+            if AUTO_COPY:
+                pyperclip.copy(text)
             
             # Show word/character count
             word_count = len(text.split())
@@ -2258,6 +2469,11 @@ def main():
         print(f"Macros loaded: {len(MACROS)}")
 
     widget = FloatingWidget()
+
+    # Start minimized if configured
+    if MINIMIZE_STARTUP:
+        widget.hide_widget()
+        print("Started minimized to tray")
 
     # Create and start tray icon
     tray_icon = create_tray_icon()
