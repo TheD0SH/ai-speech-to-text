@@ -3,6 +3,9 @@ Voice Type - Hold Shift to speak, release to type.
 Uses Groq Whisper API for fast, accurate speech-to-text.
 """
 
+__version__ = "2.3.0"
+__author__ = "Anton AI Agent"
+
 import sys
 import os
 import threading
@@ -22,7 +25,7 @@ print("Loading Voice Type...")
 import keyboard
 import pyperclip
 import tkinter as tk
-from tkinter import font as tkfont, ttk
+from tkinter import font as tkfont, ttk, messagebox
 import pyaudio
 import wave
 import httpx
@@ -52,6 +55,20 @@ DEFAULT_MACROS = {
     "now time": "{{TIME}}",
 }
 
+# Quick snippets - common phrases for quick access
+QUICK_SNIPPETS = {
+    "email": "Please let me know if you have any questions.",
+    "meeting": "I'll send you a calendar invite shortly.",
+    "followup": "Following up on our previous conversation.",
+    "intro": "I wanted to reach out regarding",
+    "thanks": "Thank you for your time and consideration.",
+    "confirm": "Please confirm receipt of this message.",
+    "asap": "Please get back to me as soon as possible.",
+    "fyi": "For your information,",
+    "action": "Action required:",
+    "urgent": "URGENT: Please respond immediately.",
+}
+
 # Statistics tracking
 DEFAULT_STATS = {
     "total_words": 0,
@@ -73,6 +90,23 @@ config_data = {
     "hotkey": "shift",
     "accounting_mode": False,
     "history_enabled": True,
+    "quicken_mode": False,  # Type character-by-character for Quicken compatibility
+    "language": "auto",  # Auto-detect language or specify (en, es, fr, de, etc.)
+    "auto_stop": False,  # Auto-stop recording after silence
+    "silence_threshold": 2.0,  # Seconds of silence before auto-stop
+    "always_on_top": True,  # Widget always on top
+    "autohide": True,  # Auto-hide widget after transcription
+    "compact_mode": False,  # Smaller widget
+    "accent_color": "#6366f1",  # Custom accent color
+    "save_audio": False,  # Save audio recordings
+    "auto_copy": True,  # Auto-copy transcription to clipboard
+    "show_timer": True,  # Show recording timer
+    "minimize_startup": False,  # Start minimized to tray
+    "widget_position": None,  # Remember widget position [x, y]
+    # Custom vocabulary - words to prioritize in transcription
+    "custom_vocabulary": [],
+    # Word replacements - auto-replace words
+    "word_replacements": {},
     # Granular punctuation controls
     "punctuation": {
         "periods": True,
@@ -100,10 +134,28 @@ API_KEY = config_data.get("api_key", "")
 MIC_INDEX = config_data.get("mic_index")
 HOTKEY = config_data.get("hotkey", "shift")
 ACCOUNTING_MODE = config_data.get("accounting_mode", False)
+DOUBLE_SPACE_PERIOD = config_data.get("double_space_period", False)
+CAPITALIZE_SENTENCES = config_data.get("capitalize_sentences", True)  # Auto-capitalize first letter
+SMART_QUOTES = config_data.get("smart_quotes", False)
 ACCOUNTING_COMMA = config_data.get("accounting_comma", False)
 CASUAL_MODE = config_data.get("casual_mode", False)
 THEME = config_data.get("theme", "dark")  # "dark" or "light"
 HISTORY_ENABLED = config_data.get("history_enabled", True)
+QUICKEN_MODE = config_data.get("quicken_mode", False)  # Character-by-character typing for Quicken
+LANGUAGE = config_data.get("language", "auto")  # Auto-detect or specify language
+AUTO_STOP = config_data.get("auto_stop", False)  # Auto-stop recording after silence
+SILENCE_THRESHOLD = config_data.get("silence_threshold", 2.0)  # Seconds of silence before auto-stop
+ALWAYS_ON_TOP = config_data.get("always_on_top", True)  # Widget always on top
+AUTOHIDE_ENABLED = config_data.get("autohide", True)  # Auto-hide widget after transcription
+COMPACT_MODE = config_data.get("compact_mode", False)  # Smaller widget
+ACCENT_COLOR = config_data.get("accent_color", "#6366f1")  # Custom accent color
+SAVE_AUDIO = config_data.get("save_audio", False)  # Save audio recordings
+AUTO_COPY = config_data.get("auto_copy", True)  # Auto-copy transcription to clipboard
+SHOW_TIMER = config_data.get("show_timer", True)  # Show recording timer
+MINIMIZE_STARTUP = config_data.get("minimize_startup", False)  # Start minimized to tray
+WIDGET_POSITION = config_data.get("widget_position", None)  # Remember widget position
+CUSTOM_VOCABULARY = config_data.get("custom_vocabulary", [])  # Custom words for transcription
+WORD_REPLACEMENTS = config_data.get("word_replacements", {})  # Auto-replace words
 FILTER_WORDS = config_data.get("filter_words", DEFAULT_FILTER_WORDS)
 
 # Granular punctuation settings
@@ -198,6 +250,8 @@ class State:
 state = State()
 settings_open = False
 tray_icon = None
+last_transcription = ""  # Store last transcription for copy feature
+last_transcription = ""  # Store last transcription for copy feature
 
 
 class FloatingWidget:
@@ -206,7 +260,7 @@ class FloatingWidget:
     def __init__(self):
         self.root = tk.Tk()
         self.root.overrideredirect(True)
-        self.root.attributes("-topmost", True)
+        self.root.attributes("-topmost", ALWAYS_ON_TOP)
         
         # Show in taskbar - this makes it behave like a normal app
         self.root.attributes("-toolwindow", False)
@@ -215,43 +269,63 @@ class FloatingWidget:
         self.apply_theme(THEME)
     
     def apply_theme(self, theme_name):
-        """Apply color theme (dark or light)."""
+        """Apply color theme (dark or light) with custom accent color."""
+        # Parse custom accent color or use default
+        accent = ACCENT_COLOR if ACCENT_COLOR else "#6366f1"
+        
         if theme_name == "light":
             # Light theme colors
             self.bg_dark = "#f5f5f5"
             self.bg_medium = "#ffffff"
             self.bg_light = "#e8e8e8"
-            self.accent_primary = "#0066cc"
+            self.accent_primary = accent
             self.accent_secondary = "#6b5b95"
             self.accent_success = "#28a745"
             self.accent_warning = "#ffc107"
             self.text_primary = "#1a1a1a"
             self.text_secondary = "#666666"
-            self.border_color = "#0066cc"
+            self.border_color = accent
         else:
             # Dark theme colors (default)
             self.bg_dark = "#1a1a2e"
             self.bg_medium = "#16213e"
             self.bg_light = "#0f3460"
-            self.accent_primary = "#4a9eff"
+            self.accent_primary = accent
             self.accent_secondary = "#533483"
             self.accent_success = "#00ff88"
             self.accent_warning = "#ffc107"
             self.text_primary = "#ffffff"
             self.text_secondary = "#a0a0a0"
-            self.border_color = "#4a9eff"
+            self.border_color = accent
 
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
         
-        # Widget dimensions
-        widget_width = 320
-        widget_height = 100
+        # Widget dimensions - compact or normal
+        if COMPACT_MODE:
+            widget_width = 200
+            widget_height = 60
+        else:
+            widget_width = 320
+            widget_height = 130  # Increased for word count
         
-        # Center horizontally, near bottom
-        x = (screen_width - widget_width) // 2
-        y = screen_height - widget_height - 100
+        # Use saved position or center horizontally near bottom
+        if WIDGET_POSITION and len(WIDGET_POSITION) == 2:
+            x, y = WIDGET_POSITION
+            # Make sure position is still on screen
+            if x < 0 or x > screen_width - widget_width:
+                x = (screen_width - widget_width) // 2
+            if y < 0 or y > screen_height - widget_height:
+                y = screen_height - widget_height - 100
+        else:
+            x = (screen_width - widget_width) // 2
+            y = screen_height - widget_height - 100
+        
         self.root.geometry(f"{widget_width}x{widget_height}+{x}+{y}")
+        
+        # Track current position for saving
+        self.current_x = x
+        self.current_y = y
 
         self.root.configure(bg=self.bg_dark)
 
@@ -292,6 +366,16 @@ class FloatingWidget:
             bg=self.bg_medium,
         )
         self.rec_indicator.pack(side=tk.RIGHT)
+        
+        # Timer label for recording duration
+        self.timer_label = tk.Label(
+            self.status_frame,
+            text="",
+            font=("Segoe UI", 10),
+            fg=self.text_secondary,
+            bg=self.bg_medium,
+        )
+        self.timer_label.pack(side=tk.RIGHT, padx=(0, 10))
 
         # Separator line
         self.separator = tk.Frame(self.content_frame, height=1, bg=self.border_color)
@@ -317,7 +401,28 @@ class FloatingWidget:
             fg=self.text_secondary,
             bg=self.bg_medium,
         )
-        self.hint_label.pack(fill=tk.X, padx=15, pady=(0, 10))
+        self.hint_label.pack(fill=tk.X, padx=15, pady=(0, 5))
+        
+        # Audio level indicator (progress bar style)
+        self.level_frame = tk.Frame(self.content_frame, bg=self.bg_medium)
+        self.level_frame.pack(fill=tk.X, padx=15, pady=(0, 5))
+        
+        self.level_canvas = tk.Canvas(
+            self.level_frame,
+            width=280,
+            height=8,
+            bg=self.bg_light,
+            highlightthickness=0
+        )
+        self.level_canvas.pack(fill=tk.X)
+        
+        # Initialize level bar (green, shows mic input level)
+        self.level_bar = self.level_canvas.create_rectangle(
+            0, 0, 0, 8,
+            fill=self.accent_success,
+            outline=""
+        )
+        self.current_level = 0
 
         # Status colors
         self.colors = {
@@ -338,10 +443,57 @@ class FloatingWidget:
         self.status_label.bind("<B1-Motion>", self.drag)
         self.text_label.bind("<Button-1>", self.start_drag)
         self.text_label.bind("<B1-Motion>", self.drag)
+        
+        # Right-click context menu
+        self.context_menu = tk.Menu(self.root, tearoff=0, bg=self.bg_dark, fg=self.text_primary,
+                                   activebackground=self.accent_primary, activeforeground="white")
+        self.context_menu.add_command(label="📋 Copy Last", command=self.copy_last)
+        self.context_menu.add_command(label="📜 History", command=self.open_history)
+        self.context_menu.add_command(label="📁 Transcribe File...", command=lambda: None)  # Placeholder
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="⚙️ Settings", command=self.open_settings)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="📌 Always on Top", command=self.toggle_topmost)
+        self.context_menu.add_command(label="👁️ Show/Hide", command=self.toggle_visibility)
+        self.context_menu.add_separator()
+        self.context_menu.add_command(label="❌ Minimize", command=self.hide_widget)
+        
+        # Bind right-click
+        self.content_frame.bind("<Button-3>", self.show_context_menu)
+        self.status_label.bind("<Button-3>", self.show_context_menu)
+        self.text_label.bind("<Button-3>", self.show_context_menu)
 
         # Start hidden
         self.hidden = True
         self.root.withdraw()
+
+    def show_context_menu(self, event):
+        """Show right-click context menu."""
+        try:
+            self.context_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.context_menu.grab_release()
+
+    def copy_last(self):
+        """Copy last transcription."""
+        global last_transcription
+        if last_transcription:
+            pyperclip.copy(last_transcription)
+
+    def toggle_topmost(self):
+        """Toggle always on top."""
+        global ALWAYS_ON_TOP
+        ALWAYS_ON_TOP = not ALWAYS_ON_TOP
+        self.root.attributes("-topmost", ALWAYS_ON_TOP)
+        config_data["always_on_top"] = ALWAYS_ON_TOP
+        CONFIG_FILE.write_text(json.dumps(config_data))
+
+    def toggle_visibility(self):
+        """Toggle widget visibility."""
+        if self.hidden:
+            self.show_widget()
+        else:
+            self.hide_widget()
 
     def start_drag(self, event):
         self.drag_start_x = event.x
@@ -351,6 +503,14 @@ class FloatingWidget:
         x = self.root.winfo_x() + event.x - self.drag_start_x
         y = self.root.winfo_y() + event.y - self.drag_start_y
         self.root.geometry(f"+{x}+{y}")
+        self.current_x = x
+        self.current_y = y
+        self.save_position()
+
+    def save_position(self):
+        """Save widget position to config."""
+        config_data["widget_position"] = [self.current_x, self.current_y]
+        CONFIG_FILE.write_text(json.dumps(config_data))
 
     def hide_widget(self):
         self.hidden = True
@@ -359,6 +519,41 @@ class FloatingWidget:
     def show_widget(self):
         self.hidden = False
         self.root.deiconify()
+    
+    def update_level(self, level):
+        """Update audio level indicator (0.0 to 1.0)."""
+        if not hasattr(self, 'level_canvas'):
+            return
+
+        # Smooth the level changes
+        self.current_level = self.current_level * 0.7 + level * 0.3
+
+        # Update bar width
+        canvas_width = 280
+        bar_width = int(canvas_width * min(self.current_level, 1.0))
+
+        self.level_canvas.coords(self.level_bar, 0, 0, bar_width, 8)
+
+        # Change color based on level
+        if self.current_level < 0.3:
+            color = self.accent_success  # Green - quiet
+        elif self.current_level < 0.7:
+            color = self.accent_warning  # Yellow - good
+        else:
+            color = "#ff4444"  # Red - too loud
+
+        self.level_canvas.itemconfig(self.level_bar, fill=color)
+
+    def start_drag(self, event):
+        """Record starting position for drag."""
+        self.drag_start_x = event.x
+        self.drag_start_y = event.y
+
+    def do_drag(self, event):
+        """Handle widget dragging."""
+        x = self.root.winfo_x() + (event.x - self.drag_start_x)
+        y = self.root.winfo_y() + (event.y - self.drag_start_y)
+        self.root.geometry(f"+{x}+{y}")
 
     def open_settings(self):
         global settings_open
@@ -367,7 +562,7 @@ class FloatingWidget:
         settings_open = True
 
         win = tk.Toplevel()
-        win.title("Voice Type Settings")
+        win.title(f"VoiceType v{__version__} Settings")
         win.geometry("500x700")
         win.configure(bg=self.bg_dark)
         win.resizable(False, False)
@@ -661,12 +856,248 @@ class FloatingWidget:
         tk.Label(theme_frame, text="  Restart app to apply theme change", 
                 bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(side=tk.LEFT)
 
+        # Quicken mode (character-by-character typing for compatibility)
+        tk.Label(content, text="💼 App Compatibility", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        
+        quicken_var = tk.BooleanVar(value=QUICKEN_MODE)
+        quicken_check = tk.Checkbutton(
+            content,
+            text="🧾 Quicken Mode (character-by-character typing)",
+            variable=quicken_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        quicken_check.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Enable if text doesn't paste correctly in Quicken or similar apps", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
+
+        # Language selection
+        tk.Label(content, text="🌍 Language", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        
+        lang_frame = tk.Frame(content, bg=self.bg_dark)
+        lang_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        language_var = tk.StringVar(value=LANGUAGE)
+        lang_options = ["auto", "en", "es", "fr", "de", "it", "pt", "ru", "ja", "ko", "zh", "ar", "hi", "nl", "pl", "tr"]
+        lang_combo = ttk.Combobox(lang_frame, textvariable=language_var, 
+                                   values=lang_options, state="readonly", width=20)
+        lang_combo.pack(side=tk.LEFT)
+        tk.Label(lang_frame, text="  Auto = detect automatically", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(side=tk.LEFT)
+
+        # Auto-stop on silence
+        tk.Label(content, text="🎤 Recording", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        
+        autostop_var = tk.BooleanVar(value=AUTO_STOP)
+        autostop_check = tk.Checkbutton(
+            content,
+            text="🔇 Auto-stop after silence (hands-free mode)",
+            variable=autostop_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        autostop_check.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Automatically stops recording when you stop talking", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+        
+        # Always on top toggle
+        ontop_var = tk.BooleanVar(value=ALWAYS_ON_TOP)
+        ontop_check = tk.Checkbutton(
+            content,
+            text="📌 Widget always on top",
+            variable=ontop_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        ontop_check.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Disable if widget blocks other windows", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+
+        # Auto-hide toggle
+        autohide_var = tk.BooleanVar(value=AUTOHIDE_ENABLED)
+        autohide_check = tk.Checkbutton(
+            content,
+            text="🙈 Auto-hide widget after transcription",
+            variable=autohide_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        autohide_check.pack(anchor="w", pady=(0, 5))
+
+        # Compact mode toggle
+        compact_var = tk.BooleanVar(value=COMPACT_MODE)
+        compact_check = tk.Checkbutton(
+            content,
+            text="📱 Compact mode (smaller widget)",
+            variable=compact_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        compact_check.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Smaller widget for minimal screen space", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
+
+        # Accent color selection
+        tk.Label(content, text="🎨 Accent Color", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        
+        color_frame = tk.Frame(content, bg=self.bg_dark)
+        color_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        color_var = tk.StringVar(value=ACCENT_COLOR)
+        color_options = [
+            ("💜 Purple", "#6366f1"),
+            ("💙 Blue", "#3b82f6"),
+            ("💚 Green", "#22c55e"),
+            ("❤️ Red", "#ef4444"),
+            ("🧡 Orange", "#f97316"),
+            ("💗 Pink", "#ec4899"),
+        ]
+        
+        color_combo = ttk.Combobox(color_frame, textvariable=color_var,
+                                   values=[c[1] for c in color_options],
+                                   state="readonly", width=10)
+        color_combo.pack(side=tk.LEFT)
+        
+        # Color preview
+        color_preview = tk.Label(color_frame, text="  Preview  ", bg=ACCENT_COLOR,
+                                fg="white", font=("Segoe UI", 9))
+        color_preview.pack(side=tk.LEFT, padx=10)
+        
+        def update_color_preview(*args):
+            color_preview.configure(bg=color_var.get())
+        color_var.trace("w", update_color_preview)
+
+        # Custom Vocabulary section
+        tk.Label(content, text="📖 Custom Vocabulary", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Words to prioritize in transcription (comma-separated)", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+        
+        vocab_entry = tk.Entry(content, bg=self.bg_light, fg=self.text_primary,
+                              insertbackground=self.text_primary,
+                              font=("Segoe UI", 10), width=50)
+        vocab_entry.insert(0, ", ".join(CUSTOM_VOCABULARY))
+        vocab_entry.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Example: API, Kubernetes, PostgreSQL, WebSocket", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 15))
+
+        # Save audio recordings option
+        save_audio_var = tk.BooleanVar(value=SAVE_AUDIO)
+        save_audio_check = tk.Checkbutton(
+            content,
+            text="💾 Save audio recordings",
+            variable=save_audio_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        save_audio_check.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Saves recordings to ~/VoiceType Recordings/", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+        
+        # Auto-copy toggle
+        auto_copy_var = tk.BooleanVar(value=AUTO_COPY)
+        auto_copy_check = tk.Checkbutton(
+            content,
+            text="📋 Auto-copy to clipboard",
+            variable=auto_copy_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        auto_copy_check.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Automatically copy transcription to clipboard", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+        
+        # Show timer toggle
+        show_timer_var = tk.BooleanVar(value=SHOW_TIMER)
+        show_timer_check = tk.Checkbutton(
+            content,
+            text="⏱️ Show recording timer",
+            variable=show_timer_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        show_timer_check.pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Display recording duration while recording", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+        
+        # Minimize on startup toggle
+        minimize_startup_var = tk.BooleanVar(value=MINIMIZE_STARTUP)
+        minimize_startup_check = tk.Checkbutton(
+            content,
+            text="📤 Start minimized to tray",
+            variable=minimize_startup_var,
+            bg=self.bg_dark,
+            fg=self.text_primary,
+            selectcolor=self.bg_light,
+            activebackground=self.bg_dark,
+            activeforeground=self.text_primary,
+            font=("Segoe UI", 10),
+            cursor="hand2"
+        )
+        minimize_startup_check.pack(anchor="w", pady=(0, 15))
+
+        # Word Replacements section
+        tk.Label(content, text="🔄 Word Replacements", font=("Segoe UI", 11, "bold"),
+                fg=self.border_color, bg=self.bg_dark).pack(anchor="w", pady=(0, 5))
+        tk.Label(content, text="   Auto-replace words (format: old=new, one per line)", 
+                bg=self.bg_dark, fg=self.text_secondary, font=("Segoe UI", 9)).pack(anchor="w", pady=(0, 5))
+        
+        replacements_text = tk.Text(content, height=3, width=50, bg=self.bg_light, fg=self.text_primary,
+                                   insertbackground=self.text_primary, font=("Segoe UI", 9))
+        for old, new in WORD_REPLACEMENTS.items():
+            replacements_text.insert(tk.END, f"{old}={new}\n")
+        replacements_text.pack(anchor="w", pady=(0, 15))
+
         # Buttons
         btn_frame = tk.Frame(content, bg=self.bg_dark)
         btn_frame.pack(pady=20)
 
         def save():
-            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME
+            global API_KEY, MIC_INDEX, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, FILTER_WORDS, THEME, QUICKEN_MODE, LANGUAGE, AUTO_STOP, ALWAYS_ON_TOP, AUTOHIDE_ENABLED, COMPACT_MODE, ACCENT_COLOR, SAVE_AUDIO, AUTO_COPY, SHOW_TIMER, MINIMIZE_STARTUP, WORD_REPLACEMENTS
             API_KEY = api_entry.get().strip()
             idx = mic_combo.current()
             if idx >= 0 and mics:
@@ -680,6 +1111,35 @@ class FloatingWidget:
             ACCOUNTING_COMMA = comma_var.get()
             CASUAL_MODE = casual_var.get()
             THEME = theme_var.get()
+            QUICKEN_MODE = quicken_var.get()
+            LANGUAGE = language_var.get()
+            AUTO_STOP = autostop_var.get()
+            ALWAYS_ON_TOP = ontop_var.get()
+            AUTOHIDE_ENABLED = autohide_var.get()
+            COMPACT_MODE = compact_var.get()
+            ACCENT_COLOR = color_var.get()
+            SAVE_AUDIO = save_audio_var.get()
+            AUTO_COPY = auto_copy_var.get()
+            SHOW_TIMER = show_timer_var.get()
+            MINIMIZE_STARTUP = minimize_startup_var.get()
+            
+            # Parse word replacements
+            replacements_text_val = replacements_text.get("1.0", tk.END).strip()
+            WORD_REPLACEMENTS = {}
+            for line in replacements_text_val.split("\n"):
+                if "=" in line:
+                    parts = line.split("=", 1)
+                    if len(parts) == 2:
+                        old, new = parts[0].strip(), parts[1].strip()
+                        if old and new:
+                            WORD_REPLACEMENTS[old] = new
+            
+            # Parse custom vocabulary
+            vocab_text = vocab_entry.get().strip()
+            if vocab_text:
+                CUSTOM_VOCABULARY = [w.strip() for w in vocab_text.split(",") if w.strip()]
+            else:
+                CUSTOM_VOCABULARY = []
             
             filter_text_val = filter_entry.get().strip()
             if filter_text_val:
@@ -700,14 +1160,82 @@ class FloatingWidget:
             config_data["accounting_comma"] = ACCOUNTING_COMMA
             config_data["casual_mode"] = CASUAL_MODE
             config_data["theme"] = THEME
+            config_data["quicken_mode"] = QUICKEN_MODE
+            config_data["language"] = LANGUAGE
+            config_data["auto_stop"] = AUTO_STOP
+            config_data["always_on_top"] = ALWAYS_ON_TOP
+            config_data["autohide"] = AUTOHIDE_ENABLED
+            config_data["compact_mode"] = COMPACT_MODE
+            config_data["accent_color"] = ACCENT_COLOR
+            config_data["save_audio"] = SAVE_AUDIO
+            config_data["auto_copy"] = AUTO_COPY
+            config_data["show_timer"] = SHOW_TIMER
+            config_data["minimize_startup"] = MINIMIZE_STARTUP
+            config_data["word_replacements"] = WORD_REPLACEMENTS
+            config_data["widget_position"] = [widget.current_x, widget.current_y] if widget else WIDGET_POSITION
+            config_data["custom_vocabulary"] = CUSTOM_VOCABULARY
             config_data["filter_words"] = FILTER_WORDS
             CONFIG_FILE.write_text(json.dumps(config_data))
+            
+            # Apply always-on-top setting immediately
+            if widget:
+                widget.root.attributes("-topmost", ALWAYS_ON_TOP)
 
             if tray_icon:
-                tray_icon.title = f"Voice Type (Hold {HOTKEY.upper()})"
+                tray_icon.title = f"VoiceType v{__version__} (Hold {HOTKEY.upper()})"
 
             save_btn.config(text="✓ Saved!", bg=self.accent_success)
             win.after(1500, lambda: save_btn.config(text="Save", bg=self.border_color))
+
+        def reset_defaults():
+            """Reset all settings to defaults."""
+            if messagebox.askyesno("Reset Settings", "Reset all settings to defaults?\n\nAPI key will be preserved."):
+                global config_data, HOTKEY, ACCOUNTING_MODE, ACCOUNTING_COMMA, CASUAL_MODE, THEME
+                global QUICKEN_MODE, LANGUAGE, AUTO_STOP, ALWAYS_ON_TOP, AUTOHIDE_ENABLED, COMPACT_MODE, ACCENT_COLOR
+                global SAVE_AUDIO, CUSTOM_VOCABULARY, FILTER_WORDS
+                
+                # Preserve API key
+                saved_key = API_KEY
+                
+                # Reset to defaults
+                HOTKEY = "shift"
+                ACCOUNTING_MODE = False
+                ACCOUNTING_COMMA = False
+                CASUAL_MODE = False
+                THEME = "dark"
+                QUICKEN_MODE = False
+                LANGUAGE = "auto"
+                AUTO_STOP = False
+                ALWAYS_ON_TOP = True
+                AUTOHIDE_ENABLED = True
+                COMPACT_MODE = False
+                ACCENT_COLOR = "#6366f1"
+                SAVE_AUDIO = False
+                CUSTOM_VOCABULARY = []
+                FILTER_WORDS = DEFAULT_FILTER_WORDS
+                
+                # Update config but keep API key
+                config_data["api_key"] = saved_key
+                config_data["hotkey"] = HOTKEY
+                config_data["accounting_mode"] = ACCOUNTING_MODE
+                config_data["accounting_comma"] = ACCOUNTING_COMMA
+                config_data["casual_mode"] = CASUAL_MODE
+                config_data["theme"] = THEME
+                config_data["quicken_mode"] = QUICKEN_MODE
+                config_data["language"] = LANGUAGE
+                config_data["auto_stop"] = AUTO_STOP
+                config_data["always_on_top"] = ALWAYS_ON_TOP
+                config_data["autohide"] = AUTOHIDE_ENABLED
+                config_data["compact_mode"] = COMPACT_MODE
+                config_data["accent_color"] = ACCENT_COLOR
+                config_data["save_audio"] = SAVE_AUDIO
+                config_data["custom_vocabulary"] = CUSTOM_VOCABULARY
+                config_data["filter_words"] = FILTER_WORDS
+                
+                CONFIG_FILE.write_text(json.dumps(config_data))
+                
+                messagebox.showinfo("Reset Complete", "Settings reset to defaults.\nPlease reopen settings to see changes.")
+                close_settings()
 
         def get_key():
             import webbrowser
@@ -730,6 +1258,9 @@ class FloatingWidget:
                             command=save, **btn_style)
         save_btn.pack(side=tk.LEFT, padx=5)
         
+        tk.Button(btn_frame, text="Reset Defaults", bg="#ef4444", fg="white",
+                 command=reset_defaults, **btn_style).pack(side=tk.LEFT, padx=5)
+        
         tk.Button(btn_frame, text="Get API Key", bg=self.accent_secondary, fg="white",
                  command=get_key, **btn_style).pack(side=tk.LEFT, padx=5)
         
@@ -742,6 +1273,83 @@ class FloatingWidget:
             win.destroy()
 
         win.protocol("WM_DELETE_WINDOW", on_close)
+
+    def open_history(self):
+        """Open history browser window with search."""
+        global HISTORY
+        if not HISTORY:
+            return
+        
+        win = tk.Toplevel(self.root)
+        win.title(f"VoiceType v{__version__} - History")
+        win.geometry("500x400")
+        win.configure(bg=self.bg_dark)
+        
+        # Search frame
+        search_frame = tk.Frame(win, bg=self.bg_dark)
+        search_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        tk.Label(search_frame, text="🔍", bg=self.bg_dark, fg=self.text_primary,
+                font=("Segoe UI", 12)).pack(side=tk.LEFT)
+        
+        search_var = tk.StringVar()
+        search_entry = tk.Entry(search_frame, textvariable=search_var, 
+                               bg=self.bg_light, fg=self.text_primary,
+                               insertbackground=self.text_primary,
+                               font=("Segoe UI", 11), width=40)
+        search_entry.pack(side=tk.LEFT, padx=5)
+        
+        # Results listbox
+        results_frame = tk.Frame(win, bg=self.bg_dark)
+        results_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        
+        scrollbar = tk.Scrollbar(results_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        listbox = tk.Listbox(results_frame, bg=self.bg_light, fg=self.text_primary,
+                            font=("Segoe UI", 10), selectmode=tk.SINGLE,
+                            yscrollcommand=scrollbar.set)
+        listbox.pack(fill=tk.BOTH, expand=True)
+        scrollbar.config(command=listbox.yview)
+        
+        # Copy button
+        def copy_selected():
+            selection = listbox.curselection()
+            if selection:
+                idx = selection[0]
+                entry = filtered_history[idx]
+                pyperclip.copy(entry.get("text", ""))
+        
+        btn_frame = tk.Frame(win, bg=self.bg_dark)
+        btn_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        copy_btn = tk.Button(btn_frame, text="📋 Copy Selected", command=copy_selected,
+                            bg=self.border_color, fg=self.text_primary,
+                            font=("Segoe UI", 10))
+        copy_btn.pack(side=tk.LEFT)
+        
+        # Filter history based on search
+        filtered_history = HISTORY.copy()
+        
+        def update_results(*args):
+            nonlocal filtered_history
+            query = search_var.get().lower()
+            listbox.delete(0, tk.END)
+            filtered_history = []
+            
+            for entry in HISTORY:
+                text = entry.get("text", "").lower()
+                if not query or query in text:
+                    filtered_history.append(entry)
+                    timestamp = entry.get("timestamp", "")
+                    preview = entry.get("text", "")[:50]
+                    listbox.insert(tk.END, f"[{timestamp}] {preview}...")
+        
+        search_var.trace("w", update_results)
+        update_results()
+        
+        win.transient(self.root)
+        win.grab_set()
 
     def quit_app(self):
         state.running = False
@@ -759,8 +1367,38 @@ class FloatingWidget:
             self.text_label.configure(text=text, fg="#f8f8f2")
         elif status_key == "recording":
             self.text_label.configure(text="Speak now...", fg="#f8f8f2")
+            # Start timer
+            if SHOW_TIMER:
+                self.start_timer()
         elif status_key == "processing":
             self.text_label.configure(text="Transcribing...", fg="#f8f8f2")
+            self.stop_timer()
+
+    def start_timer(self):
+        """Start recording timer display."""
+        self.recording_start = time.time()
+        self.timer_running = True
+        self.update_timer()
+
+    def stop_timer(self):
+        """Stop recording timer."""
+        self.timer_running = False
+
+    def update_timer(self):
+        """Update timer display every 100ms."""
+        if not self.timer_running:
+            return
+        elapsed = time.time() - self.recording_start
+        mins = int(elapsed // 60)
+        secs = int(elapsed % 60)
+        if mins > 0:
+            timer_text = f"⏱ {mins}:{secs:02d}"
+        else:
+            timer_text = f"⏱ {secs}s"
+        # Update timer label if it exists
+        if hasattr(self, 'timer_label'):
+            self.timer_label.configure(text=timer_text)
+        self.root.after(100, self.update_timer)
 
     def run(self):
         self.root.mainloop()
@@ -791,12 +1429,25 @@ def create_tray_icon():
 
     def on_settings(icon, item):
         widget.root.after(0, widget.open_settings)
-
+    
+    def on_copy_last(icon, item):
+        """Copy last transcription to clipboard."""
+        global last_transcription
+        if last_transcription:
+            pyperclip.copy(last_transcription)
+            print(f"[clipboard] Copied: {last_transcription[:50]}...")
+    
     def on_show(icon, item):
         widget.root.after(0, widget.show_widget)
     
     def on_history(icon, item):
         widget.root.after(0, widget.open_history)
+
+    def on_export(icon, item):
+        export_history()
+
+    def on_transcribe_file(icon, item):
+        transcribe_audio_file()
 
     def on_quit(icon, item):
         widget.root.after(0, widget.quit_app)
@@ -804,17 +1455,87 @@ def create_tray_icon():
     menu = pystray.Menu(
         pystray.MenuItem("Settings", on_settings),
         pystray.MenuItem("History", on_history),
+        pystray.MenuItem("Export History", on_export),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("📁 Transcribe Audio File...", on_transcribe_file),
+        pystray.MenuItem("Copy Last", on_copy_last, default=False),
         pystray.MenuItem("Show Widget", on_show),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Quit", on_quit),
     )
 
-    return pystray.Icon("voice_type", image, f"Voice Type (Hold {HOTKEY.upper()})", menu)
+    return pystray.Icon("voice_type", image, f"VoiceType v{__version__} (Hold {HOTKEY.upper()})", menu)
+
+
+def transcribe_audio_file():
+    """Transcribe an existing audio file from disk."""
+    global last_transcription
+    
+    if not API_KEY:
+        print("[error] No API key set")
+        return
+    
+    from tkinter import filedialog
+    
+    file_path = filedialog.askopenfilename(
+        title="Select Audio File",
+        filetypes=[
+            ("Audio Files", "*.wav *.mp3 *.m4a *.ogg *.flac *.webm"),
+            ("WAV Files", "*.wav"),
+            ("MP3 Files", "*.mp3"),
+            ("All Files", "*.*")
+        ]
+    )
+    
+    if not file_path:
+        return
+    
+    print(f"[file] Transcribing: {file_path}")
+    update_status("processing", "Transcribing file...")
+    widget.show_widget()
+    
+    def do_transcribe():
+        global last_transcription
+        text, error = transcribe_with_groq(file_path)
+        
+        if text:
+            text = text.strip()
+            last_transcription = text
+            
+            # Apply text processing
+            if CAPITALIZE_SENTENCES:
+                text = text[0].upper() + text[1:] if text else text
+                text = re.sub(r'([.!?]\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text)
+            
+            word_count = len(text.split())
+            char_count = len(text)
+            update_status("done", f"{text}\n\n📝 {word_count} words | {char_count} chars")
+            
+            # Copy to clipboard
+            pyperclip.copy(text)
+            print(f"[file] Transcribed: {text[:50]}...")
+            
+            # Save to history
+            save_to_history(text)
+            
+            # Type the text
+            type_text(text)
+        else:
+            update_status("error", error or "Failed to transcribe")
+        
+        # Auto-hide after delay
+        def hide_after():
+            time.sleep(3)
+            if widget and AUTOHIDE_ENABLED:
+                widget.root.after(0, widget.hide_widget)
+        threading.Thread(target=hide_after, daemon=True).start()
+    
+    threading.Thread(target=do_transcribe, daemon=True).start()
 
 
 def transcribe_with_groq(audio_path):
     """Use Groq Whisper API for transcription."""
-    global API_KEY
+    global API_KEY, CUSTOM_VOCABULARY
 
     if not API_KEY:
         return None, "No API key"
@@ -826,6 +1547,15 @@ def transcribe_with_groq(audio_path):
         with open(audio_path, "rb") as f:
             files = {"file": ("audio.wav", f, "audio/wav")}
             data = {"model": "whisper-large-v3-turbo", "response_format": "json"}
+            
+            # Add language parameter if specified (not auto-detect)
+            if LANGUAGE and LANGUAGE != "auto":
+                data["language"] = LANGUAGE
+            
+            # Add custom vocabulary as prompt to improve transcription accuracy
+            if CUSTOM_VOCABULARY:
+                vocab_prompt = "Context: " + ", ".join(CUSTOM_VOCABULARY[:50])  # Limit to avoid token limits
+                data["prompt"] = vocab_prompt
 
             with httpx.Client(timeout=30) as client:
                 response = client.post(url, headers=headers, files=files, data=data)
@@ -1175,6 +1905,18 @@ VOICE_COMMANDS = {
     "undo that": "__DELETE_WORD__",
     "scratch that": "__DELETE_WORD__",
     
+    # Navigation commands
+    "select all": "__SELECT_ALL__",
+    "copy that": "__COPY__",
+    "paste": "__PASTE__",
+    "cut that": "__CUT__",
+    "undo": "__UNDO__",
+    "redo": "__REDO__",
+    
+    # Repeat last transcription
+    "repeat last": "__REPEAT_LAST__",
+    "say that again": "__REPEAT_LAST__",
+    
     # Formatting commands
     "new paragraph": "\n\n",
     "new line": "\n",
@@ -1197,6 +1939,14 @@ VOICE_COMMANDS = {
     "close quote": '"',
     "apostrophe": "'",
     
+    # Brackets
+    "open parenthesis": "(",
+    "close parenthesis": ")",
+    "open bracket": "[",
+    "close bracket": "]",
+    "open brace": "{",
+    "close brace": "}",
+    
     # Special characters
     "at sign": "@",
     "at symbol": "@",
@@ -1211,18 +1961,33 @@ VOICE_COMMANDS = {
     "equals": "=",
     "slash": "/",
     "backslash": "\\",
+    "underscore": "_",
+    "pipe": "|",
+    "caret": "^",
+    "tilde": "~",
+    "backtick": "`",
+    "dollar sign": "$",
     
     # Common replacements
     "dot com": ".com",
     "dot net": ".net",
     "dot org": ".org",
     "dot io": ".io",
+    "dot ai": ".ai",
+    "dot app": ".app",
+    "dot dev": ".dev",
+    
+    # Programming
+    "open angle": "<",
+    "close angle": ">",
+    "less than": "<",
+    "greater than": ">",
 }
 
 
 def process_voice_commands(text):
     """Process voice commands and return modified text or special actions."""
-    global VOICE_COMMANDS
+    global VOICE_COMMANDS, last_transcription
     
     text_lower = text.lower().strip()
     
@@ -1244,6 +2009,37 @@ def process_voice_commands(text):
             print("[command] Delete all")
             keyboard.press_and_release("ctrl+a")
             keyboard.press_and_release("backspace")
+            return None
+        
+        # Handle navigation/editing commands
+        elif command_value == "__SELECT_ALL__":
+            print("[command] Select all")
+            keyboard.press_and_release("ctrl+a")
+            return None
+        elif command_value == "__COPY__":
+            print("[command] Copy")
+            keyboard.press_and_release("ctrl+c")
+            return None
+        elif command_value == "__PASTE__":
+            print("[command] Paste")
+            keyboard.press_and_release("ctrl+v")
+            return None
+        elif command_value == "__CUT__":
+            print("[command] Cut")
+            keyboard.press_and_release("ctrl+x")
+            return None
+        elif command_value == "__UNDO__":
+            print("[command] Undo")
+            keyboard.press_and_release("ctrl+z")
+            return None
+        elif command_value == "__REDO__":
+            print("[command] Redo")
+            keyboard.press_and_release("ctrl+y")
+            return None
+        elif command_value == "__REPEAT_LAST__":
+            print("[command] Repeat last transcription")
+            if last_transcription:
+                type_text(last_transcription)
             return None
         
         # Return the replacement text
@@ -1322,9 +2118,21 @@ def type_text(text):
     update_stats(text)
     
     print(f"[typing] {text}")
-    pyperclip.copy(text)
-    time.sleep(0.05)
-    keyboard.press_and_release("ctrl+v")
+    
+    # Check if Quicken mode is enabled
+    if QUICKEN_MODE:
+        # Type character-by-character for Quicken compatibility
+        print("[quicken] Using character-by-character typing")
+        for char in text:
+            keyboard.write(char)
+            time.sleep(0.01)  # Small delay between characters for compatibility
+        # Add space at end
+        keyboard.write(" ")
+    else:
+        # Normal clipboard paste mode (faster)
+        pyperclip.copy(text)
+        time.sleep(0.05)
+        keyboard.press_and_release("ctrl+v")
 
 
 def apply_macros(text):
@@ -1379,6 +2187,37 @@ def save_to_history(text):
         pass
 
 
+def export_history():
+    """Export history to a text file on desktop."""
+    global HISTORY
+    if not HISTORY:
+        print("[export] No history to export")
+        return
+    
+    from datetime import datetime
+    desktop = Path.home() / "Desktop"
+    if not desktop.exists():
+        desktop = Path.home()
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    export_file = desktop / f"voice_type_history_{timestamp}.txt"
+    
+    try:
+        with open(export_file, "w", encoding="utf-8") as f:
+            f.write("VoiceType Transcription History\n")
+            f.write(f"Exported: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Total entries: {len(HISTORY)}\n")
+            f.write("=" * 50 + "\n\n")
+            
+            for i, entry in enumerate(HISTORY, 1):
+                f.write(f"[{entry.get('timestamp', 'Unknown')}] ({entry.get('words', 0)} words)\n")
+                f.write(f"{entry.get('text', '')}\n\n")
+        
+        print(f"[export] Exported {len(HISTORY)} entries to {export_file}")
+    except Exception as e:
+        print(f"[export] Error: {e}")
+
+
 def update_stats(text):
     """Update usage statistics."""
     global STATS
@@ -1430,10 +2269,39 @@ def record_and_transcribe():
 
         frames = []
         start_time = time.time()
+        last_sound_time = time.time()  # Track when we last heard sound
+        silence_start = None
 
         while keyboard.is_pressed(HOTKEY):
             data = stream.read(chunk, exception_on_overflow=False)
             frames.append(data)
+            
+            # Calculate audio level for visual feedback
+            import struct
+            samples = struct.unpack(f'<{len(data)//2}h', data)
+            max_sample = max(abs(s) for s in samples) if samples else 0
+            level = min(max_sample / 32768.0, 1.0)  # Normalize to 0-1
+            
+            # Update widget level indicator
+            if widget:
+                widget.root.after(0, lambda l=level: widget.update_level(l))
+            
+            # Silence detection for auto-stop
+            if AUTO_STOP:
+                # Consider it sound if level is above 2% (background noise threshold)
+                if level > 0.02:
+                    last_sound_time = time.time()
+                    silence_start = None
+                else:
+                    # Track silence start
+                    if silence_start is None:
+                        silence_start = time.time()
+                    else:
+                        silence_duration = time.time() - silence_start
+                        # Auto-stop after threshold seconds of silence
+                        if silence_duration >= SILENCE_THRESHOLD:
+                            print(f"[auto-stop] {SILENCE_THRESHOLD}s silence detected")
+                            break
 
         duration = time.time() - start_time
         print(f"Recorded {duration:.1f}s")
@@ -1471,17 +2339,68 @@ def record_and_transcribe():
 
         # Transcribe
         text, error = transcribe_with_groq(temp_path)
+        
+        # Save audio if enabled
+        if SAVE_AUDIO and text:
+            audio_dir = Path.home() / "VoiceType Recordings"
+            audio_dir.mkdir(exist_ok=True)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            audio_file = audio_dir / f"recording_{timestamp}.wav"
+            import shutil
+            shutil.copy(temp_path, audio_file)
+            print(f"[audio] Saved to {audio_file}")
+        
         Path(temp_path).unlink(missing_ok=True)
 
         if text:
             text = text.strip()
+            
+            # Capitalize first letter of sentences if enabled
+            if CAPITALIZE_SENTENCES:
+                text = text[0].upper() + text[1:] if text else text
+                # Capitalize after sentence endings
+                import re
+                text = re.sub(r'([.!?]\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), text)
+
+            # Apply smart quotes if enabled
+            if SMART_QUOTES:
+                # Replace straight quotes with curly quotes
+                result = []
+                in_quote = False
+                for char in text:
+                    if char == '"':
+                        if in_quote:
+                            result.append('"')  # Closing quote
+                        else:
+                            result.append('"')  # Opening quote
+                        in_quote = not in_quote
+                    else:
+                        result.append(char)
+                text = ''.join(result)
+            
+            # Apply word replacements if configured
+            if WORD_REPLACEMENTS:
+                for old_word, new_word in WORD_REPLACEMENTS.items():
+                    text = text.replace(old_word, new_word)
+            
             print(f"[whisper] {text}")
-            update_status("done", text)
+            
+            # Store last transcription for copy feature
+            last_transcription = text
+            
+            # Auto-copy to clipboard if enabled
+            if AUTO_COPY:
+                pyperclip.copy(text)
+            
+            # Show word/character count
+            word_count = len(text.split())
+            char_count = len(text)
+            update_status("done", f"{text}\n\n📝 {word_count} words | {char_count} chars")
             type_text(text)
 
             def hide_after_done():
                 time.sleep(2)
-                if widget:
+                if widget and AUTOHIDE_ENABLED:
                     widget.root.after(0, widget.hide_widget)
 
             threading.Thread(target=hide_after_done, daemon=True).start()
@@ -1504,6 +2423,92 @@ def record_and_transcribe():
         state.recording = False
 
 
+# Keyboard shortcuts overlay
+SHORTCUTS_OVERLAY_VISIBLE = False
+
+def show_shortcuts_overlay():
+    """Show a popup with all keyboard shortcuts."""
+    global SHORTCUTS_OVERLAY_VISIBLE
+    
+    if SHORTCUTS_OVERLAY_VISIBLE:
+        return
+    
+    SHORTCUTS_OVERLAY_VISIBLE = True
+    
+    overlay = tk.Tk()
+    overlay.title("VoiceType - Keyboard Shortcuts")
+    overlay.configure(bg="#1a1a2e")
+    overlay.resizable(False, False)
+    overlay.attributes("-topmost", True)
+    
+    # Center on screen
+    overlay.update_idletasks()
+    width = 400
+    height = 450
+    x = (overlay.winfo_screenwidth() // 2) - (width // 2)
+    y = (overlay.winfo_screenheight() // 2) - (height // 2)
+    overlay.geometry(f"{width}x{height}+{x}+{y}")
+    
+    # Title
+    tk.Label(overlay, text="⌨️ Keyboard Shortcuts", font=("Segoe UI", 16, "bold"),
+            bg="#1a1a2e", fg="#4a9eff").pack(pady=20)
+    
+    shortcuts = [
+        ("Recording", f"Hold {HOTKEY.upper()}", "Push-to-talk"),
+        ("", "", ""),
+        ("Voice Commands", "", ""),
+        ("Delete last word", "\"delete last word\"", "or \"undo that\""),
+        ("Delete sentence", "\"delete last sentence\"", ""),
+        ("New paragraph", "\"new paragraph\"", "or \"new line\""),
+        ("Punctuation", "\"period\", \"comma\"", "\"question mark\""),
+        ("Select all", "\"select all\"", "Selects all text"),
+        ("Copy/Paste", "\"copy that\" / \"paste\"", "Clipboard"),
+        ("Repeat last", "\"repeat last\"", "Type last again"),
+        ("", "", ""),
+        ("In-App", "", ""),
+        ("Show shortcuts", "F1", "This overlay"),
+        ("Quick snippets", "F2", "Common phrases"),
+        ("Settings", "Right-click tray", "Open settings"),
+        ("Context menu", "Right-click widget", "Quick actions"),
+        ("Quit", "Right-click tray → Quit", ""),
+        ("", "", ""),
+        ("Press ESC or click to close", "", ""),
+    ]
+    
+    frame = tk.Frame(overlay, bg="#1a1a2e")
+    frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+    
+    for action, shortcut, note in shortcuts:
+        row = tk.Frame(frame, bg="#1a1a2e")
+        row.pack(fill=tk.X, pady=2)
+        
+        if action and not action.startswith("Press"):
+            tk.Label(row, text=action, font=("Segoe UI", 10, "bold"),
+                    bg="#1a1a2e", fg="#ffffff", width=20, anchor="w").pack(side=tk.LEFT)
+            tk.Label(row, text=shortcut, font=("Segoe UI", 10),
+                    bg="#1a1a2e", fg="#00ff88", width=25, anchor="w").pack(side=tk.LEFT)
+            tk.Label(row, text=note, font=("Segoe UI", 9),
+                    bg="#1a1a2e", fg="#a0a0a0", anchor="w").pack(side=tk.LEFT)
+        elif action.startswith("Press"):
+            tk.Label(row, text=action, font=("Segoe UI", 10, "italic"),
+                    bg="#1a1a2e", fg="#a0a0a0").pack(side=tk.LEFT)
+        else:
+            # Section header
+            tk.Label(row, text=shortcut, font=("Segoe UI", 11, "bold"),
+                    bg="#1a1a2e", fg="#533483").pack(side=tk.LEFT)
+    
+    def close_overlay(e=None):
+        global SHORTCUTS_OVERLAY_VISIBLE
+        SHORTCUTS_OVERLAY_VISIBLE = False
+        overlay.destroy()
+    
+    overlay.bind("<Escape>", close_overlay)
+    overlay.bind("<Button-1>", close_overlay)
+    overlay.protocol("WM_DELETE_WINDOW", close_overlay)
+    
+    overlay.mainloop()
+
+
 def hotkey_loop():
     """Poll for hotkey state."""
     was_pressed = False
@@ -1515,14 +2520,94 @@ def hotkey_loop():
             threading.Thread(target=record_and_transcribe, daemon=True).start()
         elif not is_pressed and was_pressed:
             was_pressed = False
+        
+        # Check for F1 to show shortcuts overlay
+        if keyboard.is_pressed("f1") and not SHORTCUTS_OVERLAY_VISIBLE:
+            keyboard.release("f1")
+            time.sleep(0.1)
+            show_shortcuts_overlay()
+        
+        # F2 to show quick snippets
+        if keyboard.is_pressed("f2") and not SNIPPETS_VISIBLE:
+            keyboard.release("f2")
+            time.sleep(0.1)
+            show_snippets_popup()
+        
         time.sleep(0.02)
+
+
+# Quick snippets popup
+SNIPPETS_VISIBLE = False
+
+def show_snippets_popup():
+    """Show a popup with quick snippets for fast text insertion."""
+    global SNIPPETS_VISIBLE
+    
+    if SNIPPETS_VISIBLE:
+        return
+    
+    SNIPPETS_VISIBLE = True
+    
+    popup = tk.Tk()
+    popup.title("VoiceType - Quick Snippets")
+    popup.configure(bg="#1a1a2e")
+    popup.resizable(False, False)
+    popup.attributes("-topmost", True)
+    
+    # Center on screen
+    popup.update_idletasks()
+    width = 450
+    height = 400
+    x = (popup.winfo_screenwidth() // 2) - (width // 2)
+    y = (popup.winfo_screenheight() // 2) - (height // 2)
+    popup.geometry(f"{width}x{height}+{x}+{y}")
+    
+    # Title
+    tk.Label(popup, text="📝 Quick Snippets (F2)", font=("Segoe UI", 16, "bold"),
+            bg="#1a1a2e", fg="#4a9eff").pack(pady=15)
+    
+    tk.Label(popup, text="Click a snippet to type it instantly", font=("Segoe UI", 10),
+            bg="#1a1a2e", fg="#a0a0a0").pack(pady=(0, 10))
+    
+    # Snippets frame
+    frame = tk.Frame(popup, bg="#1a1a2e")
+    frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+    
+    def insert_snippet(name, text):
+        """Insert snippet and close popup."""
+        type_text(text)
+        close_popup()
+    
+    # Create buttons for each snippet
+    for name, text in QUICK_SNIPPETS.items():
+        btn = tk.Button(frame, text=f"📌 {name}: {text[:40]}{'...' if len(text) > 40 else ''}",
+                       font=("Segoe UI", 10), bg="#16213e", fg="#ffffff",
+                       activebackground="#4a9eff", activeforeground="#ffffff",
+                       cursor="hand2", anchor="w", padx=10,
+                       command=lambda n=name, t=text: insert_snippet(n, t))
+        btn.pack(fill=tk.X, pady=2)
+    
+    def close_popup():
+        global SNIPPETS_VISIBLE
+        SNIPPETS_VISIBLE = False
+        popup.destroy()
+    
+    popup.protocol("WM_DELETE_WINDOW", close_popup)
+    
+    # Close on Escape
+    popup.bind("<Escape>", lambda e: close_popup())
+    
+    # Close on click outside
+    popup.bind("<FocusOut>", lambda e: close_popup())
+    
+    popup.mainloop()
 
 
 def main():
     global widget, tray_icon, STATS
 
     print("=" * 50)
-    print(f"Voice Type - Groq Whisper (Hold {HOTKEY.upper()})")
+    print(f"Voice Type v{__version__} - Groq Whisper (Hold {HOTKEY.upper()})")
     print("=" * 50)
 
     # Increment session count
@@ -1542,6 +2627,11 @@ def main():
         print(f"Macros loaded: {len(MACROS)}")
 
     widget = FloatingWidget()
+
+    # Start minimized if configured
+    if MINIMIZE_STARTUP:
+        widget.hide_widget()
+        print("Started minimized to tray")
 
     # Create and start tray icon
     tray_icon = create_tray_icon()

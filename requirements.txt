@@ -4,3 +4,4 @@ pyaudio
 httpx
 pystray
 pillow
+python-dotenv
