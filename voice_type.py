@@ -3,7 +3,7 @@ Voice Type - Hold Shift to speak, release to type.
 Uses Groq Whisper API for fast, accurate speech-to-text.
 """
 
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 __author__ = "Anton AI Agent"
 
 import sys
@@ -53,6 +53,20 @@ DEFAULT_MACROS = {
     "will do": "Will do!",
     "today date": "{{DATE}}",
     "now time": "{{TIME}}",
+}
+
+# Quick snippets - common phrases for quick access
+QUICK_SNIPPETS = {
+    "email": "Please let me know if you have any questions.",
+    "meeting": "I'll send you a calendar invite shortly.",
+    "followup": "Following up on our previous conversation.",
+    "intro": "I wanted to reach out regarding",
+    "thanks": "Thank you for your time and consideration.",
+    "confirm": "Please confirm receipt of this message.",
+    "asap": "Please get back to me as soon as possible.",
+    "fyi": "For your information,",
+    "action": "Action required:",
+    "urgent": "URGENT: Please respond immediately.",
 }
 
 # Statistics tracking
@@ -1891,6 +1905,18 @@ VOICE_COMMANDS = {
     "undo that": "__DELETE_WORD__",
     "scratch that": "__DELETE_WORD__",
     
+    # Navigation commands
+    "select all": "__SELECT_ALL__",
+    "copy that": "__COPY__",
+    "paste": "__PASTE__",
+    "cut that": "__CUT__",
+    "undo": "__UNDO__",
+    "redo": "__REDO__",
+    
+    # Repeat last transcription
+    "repeat last": "__REPEAT_LAST__",
+    "say that again": "__REPEAT_LAST__",
+    
     # Formatting commands
     "new paragraph": "\n\n",
     "new line": "\n",
@@ -1913,6 +1939,14 @@ VOICE_COMMANDS = {
     "close quote": '"',
     "apostrophe": "'",
     
+    # Brackets
+    "open parenthesis": "(",
+    "close parenthesis": ")",
+    "open bracket": "[",
+    "close bracket": "]",
+    "open brace": "{",
+    "close brace": "}",
+    
     # Special characters
     "at sign": "@",
     "at symbol": "@",
@@ -1927,18 +1961,33 @@ VOICE_COMMANDS = {
     "equals": "=",
     "slash": "/",
     "backslash": "\\",
+    "underscore": "_",
+    "pipe": "|",
+    "caret": "^",
+    "tilde": "~",
+    "backtick": "`",
+    "dollar sign": "$",
     
     # Common replacements
     "dot com": ".com",
     "dot net": ".net",
     "dot org": ".org",
     "dot io": ".io",
+    "dot ai": ".ai",
+    "dot app": ".app",
+    "dot dev": ".dev",
+    
+    # Programming
+    "open angle": "<",
+    "close angle": ">",
+    "less than": "<",
+    "greater than": ">",
 }
 
 
 def process_voice_commands(text):
     """Process voice commands and return modified text or special actions."""
-    global VOICE_COMMANDS
+    global VOICE_COMMANDS, last_transcription
     
     text_lower = text.lower().strip()
     
@@ -1960,6 +2009,37 @@ def process_voice_commands(text):
             print("[command] Delete all")
             keyboard.press_and_release("ctrl+a")
             keyboard.press_and_release("backspace")
+            return None
+        
+        # Handle navigation/editing commands
+        elif command_value == "__SELECT_ALL__":
+            print("[command] Select all")
+            keyboard.press_and_release("ctrl+a")
+            return None
+        elif command_value == "__COPY__":
+            print("[command] Copy")
+            keyboard.press_and_release("ctrl+c")
+            return None
+        elif command_value == "__PASTE__":
+            print("[command] Paste")
+            keyboard.press_and_release("ctrl+v")
+            return None
+        elif command_value == "__CUT__":
+            print("[command] Cut")
+            keyboard.press_and_release("ctrl+x")
+            return None
+        elif command_value == "__UNDO__":
+            print("[command] Undo")
+            keyboard.press_and_release("ctrl+z")
+            return None
+        elif command_value == "__REDO__":
+            print("[command] Redo")
+            keyboard.press_and_release("ctrl+y")
+            return None
+        elif command_value == "__REPEAT_LAST__":
+            print("[command] Repeat last transcription")
+            if last_transcription:
+                type_text(last_transcription)
             return None
         
         # Return the replacement text
@@ -2381,10 +2461,15 @@ def show_shortcuts_overlay():
         ("Delete sentence", "\"delete last sentence\"", ""),
         ("New paragraph", "\"new paragraph\"", "or \"new line\""),
         ("Punctuation", "\"period\", \"comma\"", "\"question mark\""),
+        ("Select all", "\"select all\"", "Selects all text"),
+        ("Copy/Paste", "\"copy that\" / \"paste\"", "Clipboard"),
+        ("Repeat last", "\"repeat last\"", "Type last again"),
         ("", "", ""),
         ("In-App", "", ""),
         ("Show shortcuts", "F1", "This overlay"),
+        ("Quick snippets", "F2", "Common phrases"),
         ("Settings", "Right-click tray", "Open settings"),
+        ("Context menu", "Right-click widget", "Quick actions"),
         ("Quit", "Right-click tray → Quit", ""),
         ("", "", ""),
         ("Press ESC or click to close", "", ""),
@@ -2442,7 +2527,80 @@ def hotkey_loop():
             time.sleep(0.1)
             show_shortcuts_overlay()
         
+        # F2 to show quick snippets
+        if keyboard.is_pressed("f2") and not SNIPPETS_VISIBLE:
+            keyboard.release("f2")
+            time.sleep(0.1)
+            show_snippets_popup()
+        
         time.sleep(0.02)
+
+
+# Quick snippets popup
+SNIPPETS_VISIBLE = False
+
+def show_snippets_popup():
+    """Show a popup with quick snippets for fast text insertion."""
+    global SNIPPETS_VISIBLE
+    
+    if SNIPPETS_VISIBLE:
+        return
+    
+    SNIPPETS_VISIBLE = True
+    
+    popup = tk.Tk()
+    popup.title("VoiceType - Quick Snippets")
+    popup.configure(bg="#1a1a2e")
+    popup.resizable(False, False)
+    popup.attributes("-topmost", True)
+    
+    # Center on screen
+    popup.update_idletasks()
+    width = 450
+    height = 400
+    x = (popup.winfo_screenwidth() // 2) - (width // 2)
+    y = (popup.winfo_screenheight() // 2) - (height // 2)
+    popup.geometry(f"{width}x{height}+{x}+{y}")
+    
+    # Title
+    tk.Label(popup, text="📝 Quick Snippets (F2)", font=("Segoe UI", 16, "bold"),
+            bg="#1a1a2e", fg="#4a9eff").pack(pady=15)
+    
+    tk.Label(popup, text="Click a snippet to type it instantly", font=("Segoe UI", 10),
+            bg="#1a1a2e", fg="#a0a0a0").pack(pady=(0, 10))
+    
+    # Snippets frame
+    frame = tk.Frame(popup, bg="#1a1a2e")
+    frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+    
+    def insert_snippet(name, text):
+        """Insert snippet and close popup."""
+        type_text(text)
+        close_popup()
+    
+    # Create buttons for each snippet
+    for name, text in QUICK_SNIPPETS.items():
+        btn = tk.Button(frame, text=f"📌 {name}: {text[:40]}{'...' if len(text) > 40 else ''}",
+                       font=("Segoe UI", 10), bg="#16213e", fg="#ffffff",
+                       activebackground="#4a9eff", activeforeground="#ffffff",
+                       cursor="hand2", anchor="w", padx=10,
+                       command=lambda n=name, t=text: insert_snippet(n, t))
+        btn.pack(fill=tk.X, pady=2)
+    
+    def close_popup():
+        global SNIPPETS_VISIBLE
+        SNIPPETS_VISIBLE = False
+        popup.destroy()
+    
+    popup.protocol("WM_DELETE_WINDOW", close_popup)
+    
+    # Close on Escape
+    popup.bind("<Escape>", lambda e: close_popup())
+    
+    # Close on click outside
+    popup.bind("<FocusOut>", lambda e: close_popup())
+    
+    popup.mainloop()
 
 
 def main():
