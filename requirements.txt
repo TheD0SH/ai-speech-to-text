@@ -1,0 +1,7 @@
+keyboard
+pyperclip
+pyaudio
+httpx
+pystray
+pillow
+python-dotenv
