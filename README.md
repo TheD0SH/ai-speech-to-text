@@ -29,11 +29,11 @@
 ## 📥 Installation
 
 ### Windows (Recommended)
-1. Download `VoiceType.exe` from the `dist` folder
+1. Go to releases folder
 2. Double-click to run - no installation needed!
 
 ### macOS
-1. Download `VoiceType.pkg`
+1. Go to releases
 2. Double-click and follow the installer
 3. Find VoiceType in your Applications folder
 
